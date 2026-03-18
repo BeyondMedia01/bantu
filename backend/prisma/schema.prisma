@@ -225,6 +225,10 @@ model PayrollRun {
   createdAt         DateTime             @default(now())
   updatedAt         DateTime             @updatedAt
   dualCurrency      Boolean              @default(false)
+  processedBy       String?
+  approvedBy       String?
+  processedAt      DateTime?
+  approvedAt       DateTime?
   payrollInputs     PayrollInput[]
   company           Company              @relation(fields: [companyId], references: [id])
   payrollCalendar   PayrollCalendar?     @relation(fields: [payrollCalendarId], references: [id])

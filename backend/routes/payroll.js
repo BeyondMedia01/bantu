@@ -120,9 +120,18 @@ router.post('/:runId/approve', requirePermission('approve_payroll'), async (req,
       return res.status(400).json({ message: 'Only DRAFT or PENDING_APPROVAL runs can be approved' });
     }
 
+    // Four-eyes: approver must be different from processor
+    if (run.processedBy && run.processedBy === req.user.userId) {
+      return res.status(403).json({ message: 'Four-eyes violation: the person who processed payroll cannot approve it. A different user must approve.' });
+    }
+
     const updated = await prisma.payrollRun.update({
       where: { id: run.id },
-      data: { status: 'APPROVED' },
+      data: { 
+        status: 'APPROVED',
+        approvedBy: req.user.userId,
+        approvedAt: new Date(),
+      },
     });
 
     await audit({ req, action: 'PAYROLL_RUN_APPROVED', resource: 'payroll_run', resourceId: run.id });
@@ -225,7 +234,7 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
     // All unprocessed inputs for this run
     const allInputs = await prisma.payrollInput.findMany({
       where: { payrollRunId: run.id, processed: false },
-      include: { transactionCode: { select: { type: true, preTax: true } } },
+      include: { transactionCode: { select: { type: true, preTax: true, affectsPaye: true, affectsNssa: true, affectsAidsLevy: true } } },
     });
     const inputsByEmployee = {};
     for (const inp of allInputs) {
@@ -283,11 +292,15 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
         const tc = input.transactionCode;
         const isEarning = tc.type === 'EARNING' || tc.type === 'BENEFIT';
         const isPreTaxDeduction = tc.type === 'DEDUCTION' && tc.preTax === true;
+        const isTaxable = tc.affectsPaye !== false; // Default to taxable if not specified
 
         if (run.dualCurrency) {
           if (isEarning) {
-            inputEarningsUSD += input.employeeUSD || 0;
-            inputEarningsZIG += input.employeeZiG || 0;
+            // Only add to earnings if taxable (affectsPaye)
+            if (isTaxable) {
+              inputEarningsUSD += input.employeeUSD || 0;
+              inputEarningsZIG += input.employeeZiG || 0;
+            }
           } else if (isPreTaxDeduction) {
             // Pre-tax pension: deducted from taxable income before PAYE
             inputPensionUSD += input.employeeUSD || 0;
@@ -300,7 +313,10 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
         } else {
           const amt = toRunCcy(input.employeeUSD, input.employeeZiG);
           if (isEarning) {
-            inputEarnings += amt;
+            // Only add to taxable earnings if affectsPaye
+            if (isTaxable) {
+              inputEarnings += amt;
+            }
           } else if (isPreTaxDeduction) {
             inputPension += amt;
           } else {
@@ -428,7 +444,7 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
 
     const result = await prisma.$transaction(async (tx) => {
       await tx.payslip.deleteMany({ where: { payrollRunId: run.id } });
-      await tx.payrollRun.update({ where: { id: run.id }, data: { status: 'PROCESSING' } });
+      await tx.payrollRun.update({ where: { id: run.id }, data: { status: 'PROCESSING', processedBy: req.user.userId, processedAt: new Date() } });
 
       await tx.payslip.createMany({ data: payslipData });
 

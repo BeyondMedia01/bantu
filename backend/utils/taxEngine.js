@@ -7,6 +7,7 @@ const DEFAULT_STATUTORY_RATES = {
   AIDS_LEVY: 0.03,
   NSSA_EMPLOYEE: 0.045,
   NSSA_EMPLOYER: 0.045,
+  PENSION_CAP: 0.15, // 15% of gross salary
   MEDICAL_AID_CREDIT_RATE: 0.50,
 };
 
@@ -147,6 +148,10 @@ function calculatePaye({
 
   const ceiling = nssaCeiling ?? DEFAULT_NSSA_CEILING[currency] ?? 700;
 
+  // Pension cap: 15% of gross salary (Zimbabwe statutory maximum)
+  const pensionCap = cashEarnings * 0.15;
+  const cappedPension = Math.min(pensionContribution, pensionCap);
+
   // Full cash earnings — all cash components, including full severance and bonus.
   // NSSA is applied to the full amount (capped at ceiling) per ZIMRA guidance.
   const cashEarnings = baseSalary + overtimeAmount + bonus + severanceAmount;
@@ -167,7 +172,8 @@ function calculatePaye({
   const wcifEmployer = cashEarnings * wcifRate;
   const sdfContribution = cashEarnings * sdfRate;
 
-  const taxableIncome = Math.max(0, grossForTax - nssaEmployee - pensionContribution);
+  // Apply pension cap (15% of gross)
+  const taxableIncome = Math.max(0, grossForTax - nssaEmployee - cappedPension);
 
   // FDS: annualise monthly taxable income, apply annual brackets, then divide by 12
   const taxBase = annualBrackets ? taxableIncome * 12 : taxableIncome;

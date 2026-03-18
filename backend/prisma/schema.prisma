@@ -1,0 +1,602 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String       @id @default(uuid())
+  name                String?
+  email               String       @unique
+  password            String
+  role                UserRole     @default(EMPLOYEE)
+  emailVerified       DateTime?
+  image               String?
+  passwordResetToken  String?      @unique
+  passwordResetExpiry DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  clientAdmin         ClientAdmin?
+  employee            Employee?
+  sessions            Session[]
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Client {
+  id               String            @id @default(uuid())
+  name             String
+  taxId            String?
+  isActive         Boolean           @default(true)
+  defaultCurrency  String            @default("USD")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  clientAdmin      ClientAdmin?
+  companies        Company[]
+  employees        Employee[]
+  grades           Grade[]
+  license          LicenseToken?
+  necTables        NecTable[]
+  payrollCalendar  PayrollCalendar?
+  subCompanies     SubCompany[]
+  subscription     Subscription?
+  taxTables        TaxTable[]
+  transactionCodes TransactionCode[]
+}
+
+model ClientAdmin {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  clientId  String   @unique
+  createdAt DateTime @default(now())
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Company {
+  id                 String       @id @default(uuid())
+  clientId           String
+  name               String
+  registrationNumber String?
+  taxId              String?
+  address            String?
+  contactEmail       String?
+  contactPhone       String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+  sdfRate            Float?
+  wcifRate           Float?
+  branches           Branch[]
+  client             Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  departments        Department[]
+  employees          Employee[]
+  payrollRuns        PayrollRun[]
+}
+
+model SubCompany {
+  id        String   @id @default(uuid())
+  clientId  String
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  branches  Branch[]
+  client    Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model Branch {
+  id           String       @id @default(uuid())
+  companyId    String
+  subCompanyId String?
+  name         String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  subCompany   SubCompany?  @relation(fields: [subCompanyId], references: [id])
+  departments  Department[]
+  employees    Employee[]
+}
+
+model Department {
+  id        String     @id @default(uuid())
+  companyId String
+  branchId  String?
+  name      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  branch    Branch?    @relation(fields: [branchId], references: [id])
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  employees Employee[]
+}
+
+model Employee {
+  id                  String               @id @default(uuid())
+  clientId            String
+  companyId           String
+  branchId            String?
+  departmentId        String?
+  userId              String?              @unique
+  employeeCode        String?
+  firstName           String
+  lastName            String
+  maidenName          String?
+  dateOfBirth         DateTime?
+  gender              Gender?
+  maritalStatus       MaritalStatus?
+  nationality         String?
+  idPassport          String?
+  socialSecurityNum   String?
+  homeAddress         String?
+  postalAddress       String?
+  nextOfKin           String?
+  nextOfKinName       String?
+  nextOfKinContact    String?
+  title               String?
+  occupation          String?
+  position            String
+  employmentType      EmploymentType       @default(PERMANENT)
+  startDate           DateTime
+  costCenter          String?
+  leaveEntitlement    Float?
+  dischargeDate       DateTime?
+  dischargeReason     String?
+  baseRate            Float
+  currency            String               @default("USD")
+  paymentMethod       PaymentMethod        @default(BANK)
+  paymentBasis        PaymentBasis         @default(MONTHLY)
+  hoursPerPeriod      Float?
+  daysPerPeriod       Float?
+  bankName            String?
+  bankBranch          String?
+  accountNumber       String?
+  rateSource          RateSource           @default(MANUAL)
+  gradeId             String?
+  taxMethod           TaxMethod            @default(NON_FDS)
+  taxTable            String?
+  taxDirective        String?
+  taxDirectivePerc    Float?
+  taxDirectiveAmt     Float?
+  accumulativeSetting String?
+  taxCredits          Float?
+  tin                 String?
+  motorVehicleBenefit Float                @default(0)
+  motorVehicleType    String?
+  leaveBalance        Float                @default(0)
+  leaveTaken          Float                @default(0)
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  splitUsdPercent     Float?
+  necGradeId          String?
+  branch              Branch?              @relation(fields: [branchId], references: [id])
+  client              Client               @relation(fields: [clientId], references: [id])
+  company             Company              @relation(fields: [companyId], references: [id])
+  department          Department?          @relation(fields: [departmentId], references: [id])
+  grade               Grade?               @relation(fields: [gradeId], references: [id])
+  necGrade            NecGrade?            @relation(fields: [necGradeId], references: [id])
+  user                User?                @relation(fields: [userId], references: [id])
+  leaveRecords        LeaveRecord[]
+  leaveRequests       LeaveRequest[]
+  loans               Loan[]
+  payrollInputs       PayrollInput[]
+  payrollTransactions PayrollTransaction[]
+  payslips            Payslip[]
+
+  @@unique([clientId, employeeCode])
+}
+
+model PayrollCalendar {
+  id          String       @id @default(uuid())
+  clientId    String       @unique
+  periodType  String       @default("MONTHLY")
+  year        Int
+  month       Int?
+  payDay      Int
+  startDate   DateTime
+  endDate     DateTime
+  isClosed    Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  client      Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  payrollRuns PayrollRun[]
+}
+
+model PayrollRun {
+  id                String               @id @default(uuid())
+  payrollCalendarId String?
+  companyId         String
+  runDate           DateTime             @default(now())
+  startDate         DateTime
+  endDate           DateTime
+  currency          String               @default("USD")
+  exchangeRate      Float                @default(1)
+  status            PayrollStatus        @default(DRAFT)
+  notes             String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  dualCurrency      Boolean              @default(false)
+  payrollInputs     PayrollInput[]
+  company           Company              @relation(fields: [companyId], references: [id])
+  payrollCalendar   PayrollCalendar?     @relation(fields: [payrollCalendarId], references: [id])
+  transactions      PayrollTransaction[]
+  payslips          Payslip[]
+}
+
+model PayrollTransaction {
+  id                String          @id @default(uuid())
+  employeeId        String
+  payrollRunId      String
+  transactionCodeId String
+  amount            Float
+  currency          String          @default("USD")
+  description       String?
+  createdAt         DateTime        @default(now())
+  employee          Employee        @relation(fields: [employeeId], references: [id])
+  payrollRun        PayrollRun      @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  transactionCode   TransactionCode @relation(fields: [transactionCodeId], references: [id])
+}
+
+model PayrollInput {
+  id                String          @id @default(uuid())
+  employeeId        String
+  payrollRunId      String?
+  transactionCodeId String
+  period            String
+  processed         Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  notes             String?
+  balance           Float           @default(0)
+  duration          String          @default("Indefinite")
+  employeeUSD       Float           @default(0)
+  employeeZiG       Float           @default(0)
+  employerUSD       Float           @default(0)
+  employerZiG       Float           @default(0)
+  units             Float?
+  unitsType         String?
+  employee          Employee        @relation(fields: [employeeId], references: [id])
+  payrollRun        PayrollRun?     @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  transactionCode   TransactionCode @relation(fields: [transactionCodeId], references: [id])
+}
+
+model Payslip {
+  id              String     @id @default(uuid())
+  employeeId      String
+  payrollRunId    String
+  gross           Float
+  paye            Float
+  aidsLevy        Float      @default(0)
+  nssaEmployee    Float      @default(0)
+  loanDeductions  Float      @default(0)
+  netPay          Float
+  pdfUrl          String?
+  createdAt       DateTime   @default(now())
+  netPayUSD       Float?
+  netPayZIG       Float?
+  wcifEmployer    Float      @default(0)
+  sdfContribution Float      @default(0)
+  necLevy         Float      @default(0)
+  aidsLevyUSD     Float?
+  aidsLevyZIG     Float?
+  grossUSD        Float?
+  grossZIG        Float?
+  nssaUSD         Float?
+  nssaZIG         Float?
+  payeUSD         Float?
+  payeZIG         Float?
+  employee        Employee   @relation(fields: [employeeId], references: [id])
+  payrollRun      PayrollRun @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+}
+
+model TransactionCode {
+  id           String               @id @default(uuid())
+  clientId     String
+  code         String
+  name         String
+  description  String?
+  type         TransactionType      @default(EARNING)
+  taxable      Boolean              @default(true)
+  pensionable  Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  preTax       Boolean              @default(false)
+  inputs       PayrollInput[]
+  transactions PayrollTransaction[]
+  client       Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@unique([clientId, code])
+}
+
+model TaxTable {
+  id            String       @id @default(uuid())
+  clientId      String
+  name          String
+  currency      String       @default("USD")
+  effectiveDate DateTime
+  expiryDate    DateTime?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  brackets      TaxBracket[]
+  client        Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model TaxBracket {
+  id          String   @id @default(uuid())
+  taxTableId  String
+  lowerBound  Float
+  upperBound  Float?
+  rate        Float
+  fixedAmount Float    @default(0)
+  createdAt   DateTime @default(now())
+  taxTable    TaxTable @relation(fields: [taxTableId], references: [id], onDelete: Cascade)
+}
+
+model Grade {
+  id        String     @id @default(uuid())
+  clientId  String
+  name      String
+  minRate   Float
+  maxRate   Float
+  currency  String     @default("USD")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  employees Employee[]
+  client    Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model NecTable {
+  id            String     @id @default(uuid())
+  clientId      String
+  name          String
+  sector        String
+  currency      String     @default("USD")
+  effectiveDate DateTime
+  expiryDate    DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  grades        NecGrade[]
+  client        Client     @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model NecGrade {
+  id          String     @id @default(uuid())
+  necTableId  String
+  gradeCode   String
+  description String?
+  minRate     Float
+  necLevyRate Float      @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+  necTable    NecTable   @relation(fields: [necTableId], references: [id], onDelete: Cascade)
+}
+
+model LeaveRecord {
+  id         String      @id @default(uuid())
+  employeeId String
+  type       String
+  startDate  DateTime
+  endDate    DateTime
+  totalDays  Float
+  reason     String?
+  status     LeaveStatus @default(PENDING)
+  approvedBy String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  employee   Employee    @relation(fields: [employeeId], references: [id])
+}
+
+model LeaveRequest {
+  id         String      @id @default(uuid())
+  employeeId String
+  startDate  DateTime
+  endDate    DateTime
+  days       Float
+  status     LeaveStatus @default(PENDING)
+  reason     String?
+  reviewedBy String?
+  reviewNote String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  type       String      @default("ANNUAL")
+  employee   Employee    @relation(fields: [employeeId], references: [id])
+}
+
+model Loan {
+  id              String          @id @default(uuid())
+  employeeId      String
+  amount          Float
+  interestRate    Float           @default(0)
+  termMonths      Int
+  startDate       DateTime
+  repaymentMethod String          @default("SALARY_DEDUCTION")
+  status          LoanStatus      @default(ACTIVE)
+  notes           String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  employee        Employee        @relation(fields: [employeeId], references: [id])
+  repayments      LoanRepayment[]
+}
+
+model LoanRepayment {
+  id        String          @id @default(uuid())
+  loanId    String
+  amount    Float
+  dueDate   DateTime
+  paidDate  DateTime?
+  status    RepaymentStatus @default(UNPAID)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  loan      Loan            @relation(fields: [loanId], references: [id], onDelete: Cascade)
+}
+
+model LicenseToken {
+  id          String   @id @default(uuid())
+  clientId    String   @unique
+  token       String   @unique
+  expiresAt   DateTime
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  employeeCap Int      @default(10)
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model Subscription {
+  id               String       @id @default(uuid())
+  clientId         String       @unique
+  stripeSubId      String?      @unique
+  stripeCustomerId String?
+  plan             PlanType     @default(BASIC)
+  pricePerEmp      Float        @default(0)
+  billingCycle     BillingCycle @default(MONTHLY)
+  employeeCap      Int          @default(10)
+  isActive         Boolean      @default(true)
+  startDate        DateTime     @default(now())
+  endDate          DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  client           Client       @relation(fields: [clientId], references: [id], onDelete: Cascade)
+}
+
+model SystemSetting {
+  id            String   @id @default(uuid())
+  settingName   String
+  settingValue  String
+  dataType      DataType @default(TEXT)
+  effectiveFrom DateTime @default(now())
+  isActive      Boolean  @default(true)
+  description   String?
+  lastUpdatedBy String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([settingName, effectiveFrom])
+  @@index([settingName, isActive])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  userEmail  String?
+  action     String
+  resource   String
+  resourceId String?
+  details    Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([resource, resourceId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+enum UserRole {
+  PLATFORM_ADMIN
+  CLIENT_ADMIN
+  EMPLOYEE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum EmploymentType {
+  PERMANENT
+  CONTRACT
+  TEMPORARY
+  PART_TIME
+}
+
+enum PaymentMethod {
+  BANK
+  CASH
+}
+
+enum PaymentBasis {
+  MONTHLY
+  DAILY
+  HOURLY
+}
+
+enum RateSource {
+  NEC_GRADE
+  MANUAL
+}
+
+enum TaxMethod {
+  FDS_AVERAGE
+  FDS_FORECASTING
+  NON_FDS
+}
+
+enum PayrollStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  PROCESSING
+  COMPLETED
+  ERROR
+}
+
+enum TransactionType {
+  EARNING
+  DEDUCTION
+  BENEFIT
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LoanStatus {
+  ACTIVE
+  PAID_OFF
+  DEFAULTED
+}
+
+enum RepaymentStatus {
+  UNPAID
+  PAID
+  OVERDUE
+}
+
+enum PlanType {
+  BASIC
+  STANDARD
+  PREMIUM
+  ENTERPRISE
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  ANNUALLY
+}
+
+enum DataType {
+  TEXT
+  NUMBER
+  BOOLEAN
+  DATE
+}

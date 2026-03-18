@@ -1,0 +1,18 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for Bantu Payroll",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "store:default",
+    "sql:default",
+    "notification:default",
+    "http:default",
+    "shell:default",
+    "shell:allow-spawn",
+    "shell:allow-execute",
+    "shell:allow-open",
+    "log:default"
+  ]
+}

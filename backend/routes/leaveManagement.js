@@ -2,8 +2,22 @@ const express = require('express');
 const prisma = require('../lib/prisma');
 const { requirePermission } = require('../lib/permissions');
 const { audit } = require('../lib/audit');
+const { getSettingAsNumber } = require('../lib/systemSettings');
 
 const router = express.Router();
+
+const DEFAULT_STATUTORY_LEAVE = {
+  ANNUAL: 24,
+  SICK: 90,
+  MATERNITY: 98,
+  PATERNITY: 2,
+};
+
+async function getStatutoryLeaveMax(leaveCode) {
+  const settingName = `STATUTORY_LEAVE_MAX_${leaveCode.toUpperCase()}`;
+  const defaultVal = DEFAULT_STATUTORY_LEAVE[leaveCode.toUpperCase()] || 90;
+  return getSettingAsNumber(settingName, defaultVal);
+}
 
 // GET /api/leave-types - List all leave types
 router.get('/types', async (req, res) => {
@@ -23,17 +37,36 @@ router.get('/types', async (req, res) => {
 // POST /api/leave-types - Create leave type
 router.post('/types', requirePermission('update_settings'), async (req, res) => {
   if (!req.clientId) return res.status(400).json({ message: 'Client context required' });
-  const { code, name, accrualRate, accrualPeriod, maxCarryOver, maxAccumulation, encashable, encashmentRate, requiresApproval } = req.body;
+  const { code, name, accrualRate, accrualPeriod, maxCarryOver, maxAccumulation, encashable, encashmentRate, requiresApproval, statutoryMinimumDays, statutoryEmploymentTypes, taxableTreatment } = req.body;
+  
+  const statutoryMins = {
+    'ANNUAL': { permanent: 24, contract: null, temporary: null },
+    'SICK': { permanent: 90, contract: 90, temporary: 90 },
+    'MATERNITY': { permanent: 98, contract: 98, temporary: 98 },
+    'PATERNITY': { permanent: 2, contract: 2, temporary: 2 },
+  };
+  
+  const codeUpper = code.toUpperCase();
+  if (statutoryMins[codeUpper] && statutoryMinimumDays !== undefined) {
+    const statutoryMin = statutoryMins[codeUpper];
+    if (statutoryMinimumDays < (statutoryMin.permanent || 0)) {
+      return res.status(400).json({ 
+        message: `Statutory minimum for ${codeUpper} is ${statutoryMin.permanent} days. Cannot set below statutory minimum.`,
+        statutoryRequirement: statutoryMin,
+      });
+    }
+  }
+  
   try {
     const existing = await prisma.leaveType.findUnique({
-      where: { clientId_code: { clientId: req.clientId, code: code.toUpperCase() } },
+      where: { clientId_code: { clientId: req.clientId, code: codeUpper } },
     });
     if (existing) return res.status(400).json({ message: 'Leave type already exists' });
     
     const leaveType = await prisma.leaveType.create({
       data: {
         clientId: req.clientId,
-        code: code.toUpperCase(),
+        code: codeUpper,
         name,
         accrualRate: accrualRate || 0,
         accrualPeriod: accrualPeriod || 'MONTHLY',
@@ -42,6 +75,9 @@ router.post('/types', requirePermission('update_settings'), async (req, res) => 
         encashable: encashable || false,
         encashmentRate: encashmentRate || null,
         requiresApproval: requiresApproval !== false,
+        statutoryMinimumDays: statutoryMinimumDays || null,
+        statutoryEmploymentTypes: statutoryEmploymentTypes || null,
+        taxableTreatment: taxableTreatment || 'FULL',
       },
     });
     await audit({ req, action: 'LEAVE_TYPE_CREATED', resource: 'leave_type', resourceId: leaveType.id, details: { code, name } });
@@ -164,8 +200,15 @@ router.post('/accrue', requirePermission('process_payroll'), async (req, res) =>
           where: { employeeId: emp.id, leaveTypeId: lt.id, year: currentYear },
         });
         
+        const statutoryMax = lt.statutoryMinimumDays || DEFAULT_STATUTORY_LEAVE[lt.code] || (lt.maxAccumulation || 90);
         const accruedThisMonth = lt.accrualRate || 0;
-        const newTotal = (balance?.accruedDays || 0) + accruedThisMonth;
+        
+        let newTotal = (balance?.accruedDays || 0) + accruedThisMonth;
+        
+        if (lt.code === 'ANNUAL' && newTotal > statutoryMax) {
+          newTotal = statutoryMax;
+        }
+        
         const cappedAccrued = Math.min(newTotal, lt.maxAccumulation || 90);
         
         if (balance) {
@@ -450,6 +493,74 @@ router.post('/year-end', requirePermission('process_payroll'), async (req, res) 
     
     await audit({ req, action: 'LEAVE_YEAR_END', resource: 'leave', details: { fromYear: currentYear, toYear: nextYear, employees: employees.length } });
     res.json({ message: 'Year-end processing completed', processed });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// POST /api/leave/records - Create leave record
+router.post('/records', requirePermission('manage_leave'), async (req, res) => {
+  if (!req.clientId) return res.status(400).json({ message: 'Client context required' });
+  
+  const { employeeId, type, startDate, endDate, totalDays, reason, medicalCertificate } = req.body;
+  
+  if (!employeeId || !type || !startDate || !endDate) {
+    return res.status(400).json({ message: 'employeeId, type, startDate, and endDate are required' });
+  }
+  
+  const leaveTypeCode = type.toUpperCase();
+  const days = totalDays || Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) + 1;
+  
+  if (leaveTypeCode === 'SICK' && days > 2 && !medicalCertificate) {
+    return res.status(400).json({ 
+      message: 'Medical certificate is required for sick leave exceeding 2 days',
+      statutoryRequirement: 'Labour Act Chapter 28:01 - Medical certificate required for sick leave > 2 days',
+      required: true,
+    });
+  }
+  
+  try {
+    const employee = await prisma.employee.findFirst({
+      where: { id: employeeId, clientId: req.clientId },
+    });
+    if (!employee) return res.status(404).json({ message: 'Employee not found' });
+    
+    const leaveType = await prisma.leaveType.findFirst({
+      where: { clientId: req.clientId, code: leaveTypeCode },
+    });
+    
+    if (leaveTypeCode === 'SICK') {
+      const currentYear = new Date().getFullYear();
+      const sickBalance = await prisma.leaveBalance.findFirst({
+        where: { employeeId, leaveTypeId: leaveType?.id, year: currentYear },
+      });
+      const usedSick = sickBalance?.usedDays || 0;
+      const statutoryMax = leaveType?.statutoryMinimumDays || 90;
+      if (usedSick + days > statutoryMax) {
+        return res.status(400).json({
+          message: `Exceeds statutory sick leave maximum of ${statutoryMax} days per year`,
+          statutoryRequirement: 'Labour Act Chapter 28:01',
+        });
+      }
+    }
+    
+    const leaveRecord = await prisma.leaveRecord.create({
+      data: {
+        employeeId,
+        type: leaveTypeCode,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        totalDays: days,
+        reason,
+        medicalCertificate: medicalCertificate || false,
+        status: 'APPROVED',
+        approvedBy: req.user?.email,
+      },
+    });
+    
+    await audit({ req, action: 'LEAVE_RECORD_CREATED', resource: 'leave_record', resourceId: leaveRecord.id, details: { employeeId, type: leaveTypeCode, days } });
+    res.status(201).json(leaveRecord);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Internal server error' });

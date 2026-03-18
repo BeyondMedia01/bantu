@@ -52,6 +52,7 @@ model Client {
   subscription     Subscription?
   taxTables        TaxTable[]
   transactionCodes TransactionCode[]
+  leaveTypes       LeaveType[]
 }
 
 model ClientAdmin {
@@ -72,8 +73,10 @@ model Company {
   address            String?
   contactEmail       String?
   contactPhone       String?
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  nssaRegistrationNumber String?
+  industryCode       String?
+  industry           String?
+  efilingCredentials String?
   sdfRate            Float?
   wcifRate           Float?
   branches           Branch[]
@@ -135,6 +138,7 @@ model Employee {
   nationality         String?
   idPassport          String?
   socialSecurityNum   String?
+  nssaNumber          String?
   homeAddress         String?
   postalAddress       String?
   nextOfKin           String?
@@ -152,7 +156,7 @@ model Employee {
   baseRate            Float
   currency            String               @default("USD")
   paymentMethod       PaymentMethod        @default(BANK)
-  paymentBasis        PaymentBasis         @default(MONTHLY)
+  paymentBasis        PaymentBasis        @default(MONTHLY)
   hoursPerPeriod      Float?
   daysPerPeriod       Float?
   bankName            String?
@@ -163,6 +167,7 @@ model Employee {
   taxMethod           TaxMethod            @default(NON_FDS)
   taxTable            String?
   taxDirective        String?
+  taxDirectiveType    String?   @default("REDUCTION")
   taxDirectivePerc    Float?
   taxDirectiveAmt     Float?
   accumulativeSetting String?
@@ -173,6 +178,11 @@ model Employee {
   leaveBalance        Float                @default(0)
   leaveTaken          Float                @default(0)
   lastSalaryChangeDate DateTime?
+  medicalAidScheme    String?
+  medicalAidRAFNumber String?
+  pensionFundName     String?
+  pensionFundRegNumber String?
+  pensionFundRegistered Boolean            @default(true)
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   splitUsdPercent     Float?
@@ -186,11 +196,15 @@ model Employee {
   user                User?                @relation(fields: [userId], references: [id])
   leaveRecords        LeaveRecord[]
   leaveRequests       LeaveRequest[]
+  leaveEntitlements   LeaveEntitlement[]
+  leaveBalances       LeaveBalance[]
+  leaveEncashments    LeaveEncashment[]
   loans               Loan[]
   payrollInputs       PayrollInput[]
   payrollTransactions PayrollTransaction[]
   payslips            Payslip[]
   employeeTransactions EmployeeTransaction[]
+  uifContributions    UIFContribution[]
 
   @@unique([clientId, employeeCode])
 }
@@ -234,6 +248,8 @@ model PayrollRun {
   payrollCalendar   PayrollCalendar?     @relation(fields: [payrollCalendarId], references: [id])
   transactions      PayrollTransaction[]
   payslips          Payslip[]
+  reconciliation    PayrollReconciliation?
+  uifContributions UIFContribution[]
 }
 
 model PayrollTransaction {
@@ -258,8 +274,13 @@ model PayrollInput {
   inputValue        Float           @default(0)
   inputQuantity     Float?
   notes             String?
+  processed         Boolean         @default(false)
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
+  employeeUSD       Float?
+  employeeZiG       Float?
+  employerUSD       Float?
+  employerZiG       Float?
   employee          Employee        @relation(fields: [employeeId], references: [id])
   payrollRun        PayrollRun?     @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
   transactionCode   TransactionCode @relation(fields: [transactionCodeId], references: [id])
@@ -273,6 +294,7 @@ model Payslip {
   paye            Float
   aidsLevy        Float      @default(0)
   nssaEmployee    Float      @default(0)
+  nssaEmployer    Float      @default(0)
   loanDeductions  Float      @default(0)
   netPay          Float
   pdfUrl          String?
@@ -280,8 +302,10 @@ model Payslip {
   netPayUSD       Float?
   netPayZIG       Float?
   wcifEmployer    Float      @default(0)
-  sdfContribution Float      @default(0)
+  sdfContribution Float     @default(0)
   necLevy         Float      @default(0)
+  uifEmployee     Float      @default(0)
+  uifEmployer     Float      @default(0)
   aidsLevyUSD     Float?
   aidsLevyZIG     Float?
   grossUSD        Float?
@@ -425,6 +449,7 @@ model LeaveRecord {
   reason     String?
   status     LeaveStatus @default(PENDING)
   approvedBy String?
+  medicalCertificate Boolean @default(false)
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   employee   Employee    @relation(fields: [employeeId], references: [id])
@@ -589,6 +614,7 @@ enum PayrollStatus {
   APPROVED
   PROCESSING
   COMPLETED
+  LOCKED
   ERROR
 }
 
@@ -627,18 +653,21 @@ enum LeaveEncashmentStatus {
 model LeaveType {
   id                    String   @id @default(uuid())
   clientId              String
-  code                  String   // e.g., ANNUAL, SICK, MATERNITY
+  code                  String
   name                  String
-  accrualRate          Float    @default(0) // days per month
-  accrualPeriod        String   @default("MONTHLY") // MONTHLY, YEARLY
-  maxCarryOver         Float    @default(0) // max days carried over to next year
-  maxAccumulation      Float    @default(90) // cap on accumulation
+  accrualRate          Float    @default(0)
+  accrualPeriod        String   @default("MONTHLY")
+  maxCarryOver         Float    @default(0)
+  maxAccumulation      Float    @default(90)
   isActive             Boolean  @default(true)
-  encashable           Boolean  @default(false) // can be converted to cash
-  encashmentRate       Float?   // daily rate for encashment (percentage of daily salary)
+  encashable           Boolean  @default(false)
+  encashmentRate       Float?
   requiresApproval     Boolean  @default(true)
+  statutoryMinimumDays Float?
+  statutoryEmploymentTypes String?
+  taxableTreatment     String   @default("FULL")
   createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  updatedAt           DateTime  @updatedAt
   client               Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   balances             LeaveBalance[]
   encashments          LeaveEncashment[]
@@ -653,7 +682,9 @@ model LeaveEntitlement {
   leaveTypeId   String
   year          Int
   entitledDays  Float      @default(0)
-  effectiveFrom DateTime  @default(now())
+  statutoryMin  Float?
+  isStatutory   Boolean    @default(false)
+  effectiveFrom DateTime   @default(now())
   createdAt     DateTime   @default(now())
   employee      Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   leaveType     LeaveType  @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
@@ -698,6 +729,55 @@ model LeaveEncashment {
   leaveType     LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
 
   @@unique([employeeId, leaveTypeId, requestDate])
+}
+
+model RBZExchangeRate {
+  id            String   @id @default(uuid())
+  rateDate      DateTime
+  usdToZiglRate Float
+  source        String   @default("RBZ_INTERBANK")
+  isOfficial    Boolean  @default(true)
+  maxSpread     Float    @default(0.02)
+  createdAt     DateTime @default(now())
+  createdBy     String?
+  notes         String?
+
+  @@unique([rateDate])
+  @@index([rateDate])
+}
+
+model PayrollReconciliation {
+  id            String   @id @default(uuid())
+  payrollRunId  String   @unique
+  period        String
+  year          Int
+  month         Int
+  totalGross   Float
+  totalPaye    Float
+  totalNssa    Float
+  totalAidsLevy Float
+  totalNetPay  Float
+  portalTotalPaye Float
+  portalTotalNssa Float
+  discrepancy   Float
+  status        String   @default("PENDING")
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  payrollRun    PayrollRun @relation(fields: [payrollRunId], references: [id])
+}
+
+model UIFContribution {
+  id            String   @id @default(uuid())
+  employeeId    String
+  payrollRunId  String
+  employeeAmt   Float
+  employerAmt   Float
+  totalAmt      Float
+  currency      String   @default("USD")
+  createdAt     DateTime @default(now())
+  employee      Employee   @relation(fields: [employeeId], references: [id])
+  payrollRun    PayrollRun @relation(fields: [payrollRunId], references: [id])
 }
 
 enum LoanStatus {

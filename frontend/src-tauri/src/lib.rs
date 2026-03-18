@@ -121,11 +121,7 @@ fn install_backend(app: &AppHandle) -> Result<(), String> {
 
     extract_backend(app)?;
 
-    status_store.set("progress", serde_json::Value::String("Installing npm dependencies...".to_string()));
-    status_store.save().map_err(|e| e.to_string())?;
-
-    run_command("rm", &["-rf", "node_modules", "package-lock.json", ".env"], &backend_dir)?;
-    run_command("npm", &["install"], &backend_dir)?;
+    // node_modules is already bundled, no need to npm install
 
     let db_path = data_dir.join("bantu.db");
     let env_content = format!(
@@ -134,12 +130,6 @@ fn install_backend(app: &AppHandle) -> Result<(), String> {
     );
     let env_path = backend_dir.join(".env");
     std::fs::write(&env_path, env_content).map_err(|e| e.to_string())?;
-
-    status_store.set("progress", serde_json::Value::String("Setting up database...".to_string()));
-    status_store.save().map_err(|e| e.to_string())?;
-
-    run_command("npx", &["prisma", "generate"], &backend_dir)?;
-    run_command("npx", &["prisma", "db", "push", "--force-reset"], &backend_dir)?;
 
     status_store.set("progress", serde_json::Value::String("Creating demo account...".to_string()));
     status_store.save().map_err(|e| e.to_string())?;

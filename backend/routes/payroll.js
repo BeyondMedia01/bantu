@@ -9,6 +9,8 @@ const { validateBody } = require('../lib/validate');
 
 const router = express.Router();
 
+const LOCKED_PERIOD_STATUSES = ['COMPLETED', 'LOCKED'];
+
 // ─── GET /api/payroll ─────────────────────────────────────────────────────────
 
 router.get('/', async (req, res) => {
@@ -54,6 +56,30 @@ router.post(
     const isDual = dualCurrency === true || dualCurrency === 'true';
     if (isDual && (!exchangeRate || parseFloat(exchangeRate) <= 1)) {
       return res.status(400).json({ message: 'A valid USD→ZiG exchange rate (>1) is required for dual-currency runs' });
+    }
+
+    if (isDual && exchangeRate) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const officialRate = await prisma.rBZExchangeRate.findFirst({
+        where: { rateDate: { lte: today }, isOfficial: true },
+        orderBy: { rateDate: 'desc' },
+      });
+
+      if (officialRate) {
+        const providedRate = parseFloat(exchangeRate);
+        const spread = Math.abs(providedRate - officialRate.usdToZiglRate) / officialRate.usdToZiglRate;
+        const maxSpread = await getSettingAsNumber('RBZ_MAX_SPREAD', 0.005);
+
+        if (spread > maxSpread) {
+          return res.status(400).json({
+            message: `Exchange rate exceeds maximum allowed spread of ${(maxSpread * 100).toFixed(1)}%. Provided: ${providedRate}, Official RBZ: ${officialRate.usdToZiglRate}, Actual spread: ${(spread * 100).toFixed(2)}%`,
+            providedRate,
+            officialRate: officialRate.usdToZiglRate,
+            spread: (spread * 100).toFixed(2) + '%',
+          });
+        }
+      }
     }
 
     try {
@@ -120,9 +146,30 @@ router.post('/:runId/approve', requirePermission('approve_payroll'), async (req,
       return res.status(400).json({ message: 'Only DRAFT or PENDING_APPROVAL runs can be approved' });
     }
 
-    // Four-eyes: approver must be different from processor
     if (run.processedBy && run.processedBy === req.user.userId) {
       return res.status(403).json({ message: 'Four-eyes violation: the person who processed payroll cannot approve it. A different user must approve.' });
+    }
+
+    const periodMonth = new Date(run.startDate).getMonth();
+    const periodYear = new Date(run.startDate).getFullYear();
+    
+    const lockedRun = await prisma.payrollRun.findFirst({
+      where: {
+        companyId: run.companyId,
+        status: { in: LOCKED_PERIOD_STATUSES },
+        startDate: {
+          gte: new Date(periodYear, periodMonth, 1),
+          lt: new Date(periodYear, periodMonth + 1, 1),
+        },
+        id: { not: run.id },
+      },
+    });
+
+    if (lockedRun) {
+      return res.status(400).json({ 
+        message: `Period is locked. A payroll run for ${periodYear}-${String(periodMonth + 1).padStart(2, '0')} has already been completed and locked.`,
+        lockedRunId: lockedRun.id,
+      });
     }
 
     const updated = await prisma.payrollRun.update({
@@ -135,6 +182,57 @@ router.post('/:runId/approve', requirePermission('approve_payroll'), async (req,
     });
 
     await audit({ req, action: 'PAYROLL_RUN_APPROVED', resource: 'payroll_run', resourceId: run.id });
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/payroll/:runId/lock — COMPLETED → LOCKED ───────────────────────
+
+router.post('/:runId/lock', requirePermission('approve_payroll'), async (req, res) => {
+  try {
+    const run = await prisma.payrollRun.findUnique({ where: { id: req.params.runId } });
+    if (!run) return res.status(404).json({ message: 'Payroll run not found' });
+    if (req.companyId && run.companyId !== req.companyId) return res.status(403).json({ message: 'Access denied' });
+    if (run.status !== 'COMPLETED') {
+      return res.status(400).json({ message: 'Only COMPLETED runs can be locked' });
+    }
+
+    const updated = await prisma.payrollRun.update({
+      where: { id: run.id },
+      data: { status: 'LOCKED' },
+    });
+
+    await audit({ req, action: 'PAYROLL_RUN_LOCKED', resource: 'payroll_run', resourceId: run.id });
+    res.json(updated);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// ─── POST /api/payroll/:runId/unlock — LOCKED → COMPLETED (with reason) ───────
+
+router.post('/:runId/unlock', requirePermission('approve_payroll'), async (req, res) => {
+  const { reason } = req.body;
+  if (!reason) return res.status(400).json({ message: 'Unlock reason is required for audit trail' });
+
+  try {
+    const run = await prisma.payrollRun.findUnique({ where: { id: req.params.runId } });
+    if (!run) return res.status(404).json({ message: 'Payroll run not found' });
+    if (req.companyId && run.companyId !== req.companyId) return res.status(403).json({ message: 'Access denied' });
+    if (run.status !== 'LOCKED') {
+      return res.status(400).json({ message: 'Only LOCKED runs can be unlocked' });
+    }
+
+    const updated = await prisma.payrollRun.update({
+      where: { id: run.id },
+      data: { status: 'COMPLETED' },
+    });
+
+    await audit({ req, action: 'PAYROLL_RUN_UNLOCKED', resource: 'payroll_run', resourceId: run.id, details: { reason } });
     res.json(updated);
   } catch (error) {
     console.error(error);
@@ -195,7 +293,7 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
 
     // NSSA ceiling from SystemSettings (falls back to engine defaults)
     const nssaCeilingUSD = await getSettingAsNumber('NSSA_CEILING_USD', 700);
-    const nssaCeilingZIG = await getSettingAsNumber('NSSA_CEILING_ZIG', 20000);
+    const nssaCeilingZIG = await getSettingAsNumber('NSSA_CEILING_ZIG', 7000);
     const nssaCeiling = run.currency === 'ZiG' ? nssaCeilingZIG : nssaCeilingUSD;
 
     // Bonus exemption threshold (ZIMRA)
@@ -225,9 +323,15 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
 
     const adjustments = req.body?.adjustments || {};
     const xr = run.exchangeRate || 1;
-    const toRunCcy = (usd, zig) => run.currency === 'ZiG'
-      ? (zig || 0) + (usd || 0) * xr
-      : (usd || 0) + (zig || 0) / xr;
+    const zigToUsd = parseFloat((1 / xr).toFixed(6));
+    const toRunCcy = (usd, zig) => {
+      const usdAmt = usd || 0;
+      const zigAmt = zig || 0;
+      if (usdAmt === 0 && zigAmt === 0) return 0;
+      return run.currency === 'ZiG'
+        ? zigAmt + usdAmt * xr
+        : usdAmt + zigAmt * zigToUsd;
+    };
 
     // ── Batch-fetch all data BEFORE the transaction (avoids long-running tx) ──
 
@@ -256,6 +360,29 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
     for (const rep of allDueRepayments) {
       const empId = rep.loan.employeeId;
       (repaymentsByEmployee[empId] = repaymentsByEmployee[empId] || []).push(rep);
+    }
+
+    // Leave records for the current period (for sick/maternity tax treatment)
+    const leaveRecords = await prisma.leaveRecord.findMany({
+      where: {
+        employeeId: { in: employeeIds },
+        startDate: { gte: run.startDate },
+        endDate: { lte: run.endDate },
+        status: 'APPROVED',
+      },
+    });
+    const leaveRecordsByEmployee = {};
+    for (const leave of leaveRecords) {
+      (leaveRecordsByEmployee[leave.employeeId] = leaveRecordsByEmployee[leave.employeeId] || []).push(leave);
+    }
+
+    // Fetch leave types for tax treatment info
+    const leaveTypes = await prisma.leaveType.findMany({
+      where: { clientId: run.company.clientId, code: { in: ['SICK', 'MATERNITY'] } },
+    });
+    const leaveTypeTaxTreatment = {};
+    for (const lt of leaveTypes) {
+      leaveTypeTaxTreatment[lt.code] = lt.taxableTreatment || 'FULL';
     }
 
     // All remaining unpaid repayments for loans that will have repayments paid (to detect pay-off)
@@ -292,28 +419,27 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
         const tc = input.transactionCode;
         const isEarning = tc.type === 'EARNING' || tc.type === 'BENEFIT';
         const isPreTaxDeduction = tc.type === 'DEDUCTION' && tc.preTax === true;
-        const isTaxable = tc.affectsPaye !== false; // Default to taxable if not specified
+        const isTaxable = tc.affectsPaye !== false;
 
         if (run.dualCurrency) {
+          const empUSD = input.employeeUSD ?? input.inputValue;
+          const empZIG = input.employeeZiG ?? 0;
+          
           if (isEarning) {
-            // Only add to earnings if taxable (affectsPaye)
             if (isTaxable) {
-              inputEarningsUSD += input.employeeUSD || 0;
-              inputEarningsZIG += input.employeeZiG || 0;
+              inputEarningsUSD += empUSD;
+              inputEarningsZIG += empZIG;
             }
           } else if (isPreTaxDeduction) {
-            // Pre-tax pension: deducted from taxable income before PAYE
-            inputPensionUSD += input.employeeUSD || 0;
-            inputPensionZIG += input.employeeZiG || 0;
+            inputPensionUSD += empUSD;
+            inputPensionZIG += empZIG;
           } else {
-            // Post-tax deductions: subtracted from net pay after PAYE
-            inputDeductionsUSD += input.employeeUSD || 0;
-            inputDeductionsZIG += input.employeeZiG || 0;
+            inputDeductionsUSD += empUSD;
+            inputDeductionsZIG += empZIG;
           }
         } else {
           const amt = toRunCcy(input.employeeUSD, input.employeeZiG);
           if (isEarning) {
-            // Only add to taxable earnings if affectsPaye
             if (isTaxable) {
               inputEarnings += amt;
             }
@@ -331,11 +457,62 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
         else if (run.currency === 'USD' && emp.currency === 'ZiG') baseRate = emp.baseRate / run.exchangeRate;
       }
 
+      // Calculate sick/maternity leave amounts from leave records
+      const empLeaveRecords = leaveRecordsByEmployee[emp.id] || [];
+      const dailyRate = baseRate / 22;
+      
+      let sickLeaveAmount = 0;
+      let maternityLeaveAmount = 0;
+      let sickLeaveTaxable = true;
+      let maternityLeaveTaxable = true;
+      
+      for (const leave of empLeaveRecords) {
+        const leaveTypeCode = leave.type?.toUpperCase();
+        const leaveDays = leave.totalDays || 0;
+        
+        if (leaveTypeCode === 'SICK') {
+          const sickTaxTreatment = leaveTypeTaxTreatment['SICK'] || 'FULL';
+          
+          if (sickTaxTreatment === 'FULL') {
+            sickLeaveTaxable = true;
+            sickLeaveAmount = leaveDays * dailyRate;
+          } else if (sickTaxTreatment === 'PARTIAL') {
+            sickLeaveTaxable = true;
+            const fullPayDays = Math.min(30, leaveDays);
+            const halfPayDays = Math.max(0, leaveDays - 30);
+            sickLeaveAmount = (fullPayDays * dailyRate) + (halfPayDays * dailyRate * 0.5);
+          } else if (sickTaxTreatment === 'EXEMPT') {
+            sickLeaveTaxable = false;
+            sickLeaveAmount = leaveDays * dailyRate;
+          }
+        }
+        
+        if (leaveTypeCode === 'MATERNITY') {
+          const maternityTaxTreatment = leaveTypeTaxTreatment['MATERNITY'] || 'FULL';
+          
+          if (maternityTaxTreatment === 'FULL') {
+            maternityLeaveTaxable = true;
+            maternityLeaveAmount = leaveDays * dailyRate;
+          } else if (maternityTaxTreatment === 'PARTIAL') {
+            maternityLeaveTaxable = true;
+            const first28 = Math.min(28, leaveDays);
+            const remaining = Math.max(0, leaveDays - 28);
+            maternityLeaveAmount = (first28 * dailyRate) + (remaining * dailyRate * 0.5);
+          } else if (maternityTaxTreatment === 'EXEMPT') {
+            maternityLeaveTaxable = false;
+            maternityLeaveAmount = leaveDays * dailyRate;
+          }
+        }
+      }
+
       let necLevy = 0;
       if (emp.rateSource === 'NEC_GRADE' && emp.necGrade) {
         const necMinRate = emp.necGrade.minRate;
-        if (baseRate < necMinRate) baseRate = necMinRate;
-        necLevy = baseRate * (emp.necGrade.necLevyRate || 0);
+        if (baseRate < necMinRate) {
+          necLevy = 0;
+        } else {
+          necLevy = (baseRate - necMinRate) * (emp.necGrade.necLevyRate || 0);
+        }
       }
 
       let taxResult, taxResultUSD, taxResultZIG;
@@ -355,6 +532,15 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
           medicalAid: adj.medicalAid || 0,
           taxCredits: emp.taxCredits || 0, wcifRate, sdfRate,
           taxBrackets: taxBracketsUSD, annualBrackets: annualBracketsUSD, nssaCeiling: nssaCeilingUSD,
+          employmentType: emp.employmentType,
+          taxDirective: emp.taxDirective,
+          taxDirectiveType: emp.taxDirectiveType,
+          taxDirectivePerc: emp.taxDirectivePerc,
+          taxDirectiveAmt: emp.taxDirectiveAmt,
+          sickLeaveTaxable,
+          maternityLeaveTaxable,
+          sickLeaveAmount,
+          maternityLeaveAmount,
         });
 
         taxResultZIG = calculatePaye({
@@ -366,6 +552,10 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
           pensionContribution: inputPensionZIG, medicalAid: 0, taxCredits: 0,
           wcifRate: 0, sdfRate: 0,
           taxBrackets: taxBracketsZIG, annualBrackets: annualBracketsZIG, nssaCeiling: nssaCeilingZIG,
+          employmentType: emp.employmentType,
+          taxDirective: null,
+          taxDirectivePerc: null,
+          taxDirectiveAmt: null,
         });
 
         taxResult = taxResultUSD;
@@ -381,6 +571,15 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
           medicalAid: adj.medicalAid || 0,
           taxCredits: emp.taxCredits || 0, wcifRate, sdfRate,
           taxBrackets, annualBrackets, nssaCeiling,
+          employmentType: emp.employmentType,
+          taxDirective: emp.taxDirective,
+          taxDirectiveType: emp.taxDirectiveType,
+          taxDirectivePerc: emp.taxDirectivePerc,
+          taxDirectiveAmt: emp.taxDirectiveAmt,
+          sickLeaveTaxable,
+          maternityLeaveTaxable,
+          sickLeaveAmount,
+          maternityLeaveAmount,
         });
       }
 
@@ -425,9 +624,12 @@ router.post('/:runId/process', requirePermission('process_payroll'), async (req,
         paye: taxResult.totalPaye,
         aidsLevy: taxResult.aidsLevy,
         nssaEmployee: taxResult.nssaEmployee,
+        nssaEmployer: taxResult.nssaEmployer,
         wcifEmployer: taxResult.wcifEmployer,
         sdfContribution: taxResult.sdfContribution,
         necLevy,
+        uifEmployee: taxResult.uifEmployee || 0,
+        uifEmployer: taxResult.uifEmployer || 0,
         loanDeductions,
         netPay: netPayAfterLoans,
         netPayUSD,
@@ -635,7 +837,7 @@ router.get('/:runId/payslips/:id/pdf', async (req, res) => {
       paye: payslip.paye,
       aidsLevy: payslip.aidsLevy,
       nssaEmployee: payslip.nssaEmployee,
-      nssaEmployer: payslip.nssaEmployee,    // employer rate equals employee rate (4.5% each)
+      nssaEmployer: payslip.nssaEmployer || payslip.nssaEmployee,
       wcifEmployer: payslip.wcifEmployer || 0,
       sdfContribution: payslip.sdfContribution || 0,
       necLevy: payslip.necLevy || 0,

@@ -6,6 +6,7 @@ const prisma = require('../lib/prisma');
 const { requirePermission } = require('../lib/permissions');
 const { checkEmployeeCap } = require('../lib/license');
 const { audit } = require('../lib/audit');
+const { validateTIN } = require('../utils/validators');
 const { validate } = require('../lib/validate');
 
 const upload = multer({
@@ -217,6 +218,19 @@ router.post('/', requirePermission('manage_employees'), async (req, res) => {
 
     const data = pickEmployeeFields(req.body);
     Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
+
+    if (data.tin) {
+      const tinValidation = validateTIN(data.tin);
+      if (!tinValidation.valid) {
+        return res.status(400).json({
+          message: `Invalid TIN: ${tinValidation.error}`,
+          field: 'tin',
+          provided: data.tin,
+          expectedFormat: '10 digits (e.g., 1234567890) or new format: XX-XXXXXXX-XX',
+        });
+      }
+      data.tin = tinValidation.tin;
+    }
 
     const employee = await prisma.employee.create({
       data: {
@@ -465,6 +479,19 @@ router.put('/:id', requirePermission('manage_employees'), async (req, res) => {
 
     const data = pickEmployeeFields(req.body);
     Object.keys(data).forEach((k) => data[k] === undefined && delete data[k]);
+
+    if (data.tin) {
+      const tinValidation = validateTIN(data.tin);
+      if (!tinValidation.valid) {
+        return res.status(400).json({
+          message: `Invalid TIN: ${tinValidation.error}`,
+          field: 'tin',
+          provided: data.tin,
+          expectedFormat: '10 digits (e.g., 1234567890) or new format: XX-XXXXXXX-XX',
+        });
+      }
+      data.tin = tinValidation.tin;
+    }
 
     const employee = await prisma.employee.update({ where: { id: req.params.id }, data });
 

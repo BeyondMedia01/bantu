@@ -81,6 +81,7 @@ app.use('/api/retroactive', require('./routes/retroactive'));
 app.use('/api/portals', require('./routes/portals'));
 app.use('/api/tax-tables', require('./routes/taxTables'));
 app.use('/api/grades', require('./routes/grades'));
+app.use('/api/termination', require('./routes/termination'));
 
 // Leave & Loans
 app.use('/api/leave', require('./routes/leave'));
@@ -105,7 +106,9 @@ app.use('/api/backpay', require('./routes/backPay'));
 app.use('/api/period-end', require('./routes/periodEnd'));
 app.use('/api/nssa-settings', require('./routes/nssaSettings'));
 app.use('/api/currency-rates', require('./routes/currencyRates'));
+app.use('/api/rbz-rates', require('./routes/rbzRates'));
 app.use('/api/nec-tables', require('./routes/necTables'));
+app.use('/api/bank-files', require('./routes/bankFiles'));
 
 // Intelligence
 app.use('/api/intelligence', require('./routes/intelligence'));

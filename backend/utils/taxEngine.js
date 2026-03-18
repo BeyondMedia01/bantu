@@ -1,28 +1,41 @@
-/**
- * Zimbabwean PAYE Calculation Engine (FDS)
- * Final Deduction System implementation based on ZIMRA guidelines.
- */
-
 const DEFAULT_STATUTORY_RATES = {
   AIDS_LEVY: 0.03,
   NSSA_EMPLOYEE: 0.045,
   NSSA_EMPLOYER: 0.045,
-  PENSION_CAP: 0.15, // 15% of gross salary
-  MEDICAL_AID_CREDIT_RATE: 0.50,
+  PENSION_CAP: 0.15,
+  MEDICAL_AID_CREDIT_RATE: 0.25,
+  MEDICAL_AID_CREDIT_ANNUAL_CAP: 600,
+  AIDS_LEVY_EXEMPTION_THRESHOLD_USD: 500,
+  AIDS_LEVY_EXEMPTION_THRESHOLD_ZIG: 20000,
+  UIF_EMPLOYEE: 0.01,
+  UIF_EMPLOYER: 0.01,
+  UIF_CEILING_USD: 100,
+  UIF_CEILING_ZIG: 100000,
 };
 
 let STATUTORY_RATES = { ...DEFAULT_STATUTORY_RATES };
 
-/**
- * Load statutory rates from SystemSettings
- * Call this on server startup and after settings changes
- */
 async function loadStatutoryRates(prisma) {
   try {
     const settings = await prisma.systemSetting.findMany({
       where: {
         settingName: {
-          in: ['AIDS_LEVY_RATE', 'NSSA_EMPLOYEE_RATE', 'NSSA_EMPLOYER_RATE', 'NSSA_CEILING_USD', 'PENSION_CAP_RATE'],
+          in: [
+            'AIDS_LEVY_RATE',
+            'NSSA_EMPLOYEE_RATE',
+            'NSSA_EMPLOYER_RATE',
+            'NSSA_CEILING_USD',
+            'NSSA_CEILING_ZIG',
+            'PENSION_CAP_RATE',
+            'AIDS_LEVY_EXEMPTION_THRESHOLD_USD',
+            'AIDS_LEVY_EXEMPTION_THRESHOLD_ZIG',
+            'MEDICAL_AID_CREDIT_RATE',
+            'MEDICAL_AID_CREDIT_ANNUAL_CAP',
+            'UIF_EMPLOYEE_RATE',
+            'UIF_EMPLOYER_RATE',
+            'UIF_CEILING_USD',
+            'UIF_CEILING_ZIG',
+          ],
         },
         isActive: true,
       },
@@ -33,8 +46,17 @@ async function loadStatutoryRates(prisma) {
       if (s.settingName === 'AIDS_LEVY_RATE') rates.AIDS_LEVY = parseFloat(s.settingValue) / 100;
       if (s.settingName === 'NSSA_EMPLOYEE_RATE') rates.NSSA_EMPLOYEE = parseFloat(s.settingValue) / 100;
       if (s.settingName === 'NSSA_EMPLOYER_RATE') rates.NSSA_EMPLOYER = parseFloat(s.settingValue) / 100;
-      if (s.settingName === 'NSSA_CEILING_USD') rates.NSSA_CEILING = parseFloat(s.settingValue);
+      if (s.settingName === 'NSSA_CEILING_USD') rates.NSSA_CEILING_USD = parseFloat(s.settingValue);
+      if (s.settingName === 'NSSA_CEILING_ZIG') rates.NSSA_CEILING_ZIG = parseFloat(s.settingValue);
       if (s.settingName === 'PENSION_CAP_RATE') rates.PENSION_CAP = parseFloat(s.settingValue) / 100;
+      if (s.settingName === 'AIDS_LEVY_EXEMPTION_THRESHOLD_USD') rates.AIDS_LEVY_EXEMPTION_THRESHOLD_USD = parseFloat(s.settingValue);
+      if (s.settingName === 'AIDS_LEVY_EXEMPTION_THRESHOLD_ZIG') rates.AIDS_LEVY_EXEMPTION_THRESHOLD_ZIG = parseFloat(s.settingValue);
+      if (s.settingName === 'MEDICAL_AID_CREDIT_RATE') rates.MEDICAL_AID_CREDIT_RATE = parseFloat(s.settingValue) / 100;
+      if (s.settingName === 'MEDICAL_AID_CREDIT_ANNUAL_CAP') rates.MEDICAL_AID_CREDIT_ANNUAL_CAP = parseFloat(s.settingValue);
+      if (s.settingName === 'UIF_EMPLOYEE_RATE') rates.UIF_EMPLOYEE = parseFloat(s.settingValue) / 100;
+      if (s.settingName === 'UIF_EMPLOYER_RATE') rates.UIF_EMPLOYER = parseFloat(s.settingValue) / 100;
+      if (s.settingName === 'UIF_CEILING_USD') rates.UIF_CEILING_USD = parseFloat(s.settingValue);
+      if (s.settingName === 'UIF_CEILING_ZIG') rates.UIF_CEILING_ZIG = parseFloat(s.settingValue);
     }
     
     if (Object.keys(rates).length > 0) {
@@ -46,16 +68,6 @@ async function loadStatutoryRates(prisma) {
   }
 }
 
-module.exports = {
-  calculatePaye,
-  loadStatutoryRates,
-  DEFAULT_STATUTORY_RATES,
-  getStatutoryRates: () => STATUTORY_RATES,
-};
-
-// 2024 USD Tax Bands (Monthly) — used as fallback when no DB bands are provided
-
-// 2024 USD Tax Bands (Monthly) — used as fallback when no DB bands are provided
 const USD_TAX_BANDS_2024 = [
   { lower: 0,    upper: 100,      rate: 0,    fixed: 0 },
   { lower: 100,  upper: 300,      rate: 0.20, fixed: 0 },
@@ -65,7 +77,6 @@ const USD_TAX_BANDS_2024 = [
   { lower: 3000, upper: Infinity, rate: 0.40, fixed: 865 },
 ];
 
-// 2024 ZiG Tax Bands (Monthly) — used as fallback
 const ZIG_TAX_BANDS_2024 = [
   { lower: 0,     upper: 2800,     rate: 0,    fixed: 0 },
   { lower: 2800,  upper: 8400,     rate: 0.20, fixed: 0 },
@@ -75,12 +86,8 @@ const ZIG_TAX_BANDS_2024 = [
   { lower: 84000, upper: Infinity, rate: 0.40, fixed: 24220 },
 ];
 
-const DEFAULT_NSSA_CEILING = { USD: 700, ZiG: 20000 };
+const DEFAULT_NSSA_CEILING = { USD: 700, ZiG: 7000 };
 
-/**
- * Normalise DB TaxBracket records into the internal band format.
- * DB records: { lowerBound, upperBound, rate, fixedAmount }
- */
 const normaliseBrackets = (brackets) =>
   brackets
     .sort((a, b) => a.lowerBound - b.lowerBound)
@@ -91,34 +98,6 @@ const normaliseBrackets = (brackets) =>
       fixed: b.fixedAmount ?? 0,
     }));
 
-/**
- * Calculates PAYE for a given monthly gross salary.
- *
- * @param {Object} params
- * @param {number}   params.baseSalary
- * @param {string}   params.currency              "USD" | "ZiG"
- * @param {number}   [params.taxableBenefits]      Other non-cash benefits (e.g. housing)
- * @param {number}   [params.motorVehicleBenefit]  Annual deemed value ÷ 12 — added to taxable income per ZIMRA FDS
- * @param {number}   [params.overtimeAmount]
- * @param {number}   [params.bonus]
- * @param {number}   [params.bonusExemption]       Tax-free bonus threshold per ZIMRA. Exempt portion excluded from
- *                                                  PAYE but NSSA is still calculated on full cash earnings.
- * @param {number}   [params.severanceAmount]      Retrenchment / severance pay — included in cash earnings; the
- *                                                  exempt portion (up to severanceExemption) is excluded from PAYE.
- * @param {number}   [params.severanceExemption]   ZIMRA-prescribed tax-free threshold for retrenchment packages.
- * @param {number}   [params.pensionContribution]
- * @param {number}   [params.medicalAid]
- * @param {number}   [params.taxCredits]
- * @param {number}   [params.wcifRate]             Workers Compensation Insurance Fund rate — employer-only, per
- *                                                  industry classification; does NOT reduce employee net pay.
- * @param {number}   [params.sdfRate]              Standard Development Fund / Manpower Training Levy rate —
- *                                                  employer-only (typically 1%); does NOT reduce employee net pay.
- * @param {Array}    [params.taxBrackets]          DB TaxBracket[] — overrides built-in bands when provided
- * @param {boolean}  [params.annualBrackets]        true when DB brackets are annual (FDS). Monthly income is
- *                                                  annualised (×12), tax computed against annual bands, result
- *                                                  divided by 12. Hardcoded fallback bands are already monthly.
- * @param {number}   [params.nssaCeiling]          Override NSSA ceiling from DB/SystemSettings
- */
 function calculatePaye({
   baseSalary,
   currency,
@@ -137,8 +116,17 @@ function calculatePaye({
   taxBrackets = null,
   annualBrackets = false,
   nssaCeiling = null,
+  employmentType = 'PERMANENT',
+  taxDirective = null,
+  taxDirectiveType = null,
+  taxDirectivePerc = null,
+  taxDirectiveAmt = null,
+  sickLeaveTaxable = true,
+  maternityLeaveTaxable = true,
+  sickLeaveAmount = 0,
+  maternityLeaveAmount = 0,
+  pensionFundRegistered = true,
 }) {
-  // Resolve tax bands: prefer DB brackets, fall back to hardcoded monthly 2024 bands
   let bands;
   if (taxBrackets && taxBrackets.length > 0) {
     bands = normaliseBrackets(taxBrackets);
@@ -146,36 +134,49 @@ function calculatePaye({
     bands = currency === 'USD' ? USD_TAX_BANDS_2024 : ZIG_TAX_BANDS_2024;
   }
 
-  const ceiling = nssaCeiling ?? DEFAULT_NSSA_CEILING[currency] ?? 700;
+  const ceiling = nssaCeiling ?? (currency === 'ZiG' 
+    ? (STATUTORY_RATES.NSSA_CEILING_ZIG || 7000) 
+    : (STATUTORY_RATES.NSSA_CEILING_USD || 700));
 
-  // Pension cap: 15% of gross salary (Zimbabwe statutory maximum)
-  const pensionCap = cashEarnings * 0.15;
+  let totalEarnings = baseSalary + overtimeAmount + bonus + severanceAmount;
+
+  if (!sickLeaveTaxable && sickLeaveAmount > 0) {
+    totalEarnings -= sickLeaveAmount;
+  }
+  if (!maternityLeaveTaxable && maternityLeaveAmount > 0) {
+    const taxableMaternity = Math.max(0, maternityLeaveAmount - (28 * baseSalary / 22));
+    totalEarnings -= taxableMaternity;
+  }
+
+  const pensionCap = totalEarnings * STATUTORY_RATES.PENSION_CAP;
   const cappedPension = Math.min(pensionContribution, pensionCap);
 
-  // Full cash earnings — all cash components, including full severance and bonus.
-  // NSSA is applied to the full amount (capped at ceiling) per ZIMRA guidance.
-  const cashEarnings = baseSalary + overtimeAmount + bonus + severanceAmount;
-
-  // Exempt portions reduce the PAYE base but NOT the NSSA base.
-  const exemptBonus     = Math.min(bonus, bonusExemption);
+  const exemptBonus = Math.min(bonus, bonusExemption);
   const exemptSeverance = Math.min(severanceAmount, severanceExemption);
 
-  // Motor vehicle benefit: deemed fringe benefit — taxable but excluded from NSSA.
-  const grossForTax = cashEarnings + taxableBenefits + motorVehicleBenefit
+  const grossForTax = totalEarnings + taxableBenefits + motorVehicleBenefit
                       - exemptBonus - exemptSeverance;
 
-  const nssaBasis    = Math.min(cashEarnings, ceiling);
+  const nssaBasis = Math.min(totalEarnings, ceiling);
   const nssaEmployee = nssaBasis * STATUTORY_RATES.NSSA_EMPLOYEE;
   const nssaEmployer = nssaBasis * STATUTORY_RATES.NSSA_EMPLOYER;
 
-  // Employer-only statutory contributions — do NOT reduce employee net pay.
-  const wcifEmployer = cashEarnings * wcifRate;
-  const sdfContribution = cashEarnings * sdfRate;
+  const wcifEmployer = totalEarnings * wcifRate;
+  const sdfContribution = totalEarnings * sdfRate;
+  
+  const uifCeiling = currency === 'ZiG' 
+    ? STATUTORY_RATES.UIF_CEILING_ZIG 
+    : STATUTORY_RATES.UIF_CEILING_USD;
+  const uifBasis = Math.min(totalEarnings, uifCeiling);
+  const uifEmployee = uifBasis * STATUTORY_RATES.UIF_EMPLOYEE;
+  const uifEmployer = uifBasis * STATUTORY_RATES.UIF_EMPLOYER;
 
-  // Apply pension cap (15% of gross)
-  const taxableIncome = Math.max(0, grossForTax - nssaEmployee - cappedPension);
+  let taxableIncome = Math.max(0, grossForTax - nssaEmployee - cappedPension);
 
-  // FDS: annualise monthly taxable income, apply annual brackets, then divide by 12
+  if (!pensionFundRegistered && pensionContribution > 0) {
+    taxableIncome += pensionContribution;
+  }
+
   const taxBase = annualBrackets ? taxableIncome * 12 : taxableIncome;
 
   let annualPaye = 0;
@@ -185,17 +186,37 @@ function calculatePaye({
     annualPaye += taxableInThisBand * band.rate;
   }
 
-  const payeBeforeLevy = annualBrackets ? annualPaye / 12 : annualPaye;
+  let payeBeforeLevy = annualBrackets ? annualPaye / 12 : annualPaye;
 
-  const aidsLevy         = payeBeforeLevy * STATUTORY_RATES.AIDS_LEVY;
-  const medicalAidCredit = medicalAid * STATUTORY_RATES.MEDICAL_AID_CREDIT_RATE;
-  const totalPaye        = Math.max(0, payeBeforeLevy + aidsLevy - medicalAidCredit - taxCredits);
+  let taxDirectiveApplied = null;
+  const directiveType = taxDirectiveType || 'REDUCTION';
+  
+  if (taxDirectiveAmt !== null && taxDirectiveAmt !== undefined && taxDirectiveAmt > 0) {
+    if (directiveType === 'FIXED') {
+      payeBeforeLevy = Math.max(0, payeBeforeLevy - taxDirectiveAmt);
+      taxDirectiveApplied = `Fixed directive: -${taxDirectiveAmt}`;
+    } else {
+      payeBeforeLevy = Math.max(0, payeBeforeLevy - taxDirectiveAmt);
+      taxDirectiveApplied = `Reduction directive: -${taxDirectiveAmt}`;
+    }
+  } else if (taxDirectivePerc !== null && taxDirectivePerc !== undefined && taxDirectivePerc > 0 && taxDirectivePerc < 100) {
+    const directiveDeduction = payeBeforeLevy * (taxDirectivePerc / 100);
+    payeBeforeLevy = Math.max(0, payeBeforeLevy - directiveDeduction);
+    taxDirectiveApplied = `${taxDirectivePerc}% ${directiveType.toLowerCase()} directive: -${directiveDeduction.toFixed(2)}`;
+  }
 
-  const totalDeductions = nssaEmployee + pensionContribution + medicalAid + totalPaye;
-  const netSalary       = cashEarnings - totalDeductions;
+  const aidsLevy = calculateAidsLevy(payeBeforeLevy, employmentType, currency);
+
+  const medicalAidCreditBase = medicalAid * STATUTORY_RATES.MEDICAL_AID_CREDIT_RATE;
+  const medicalAidCreditCap = STATUTORY_RATES.MEDICAL_AID_CREDIT_ANNUAL_CAP / 12;
+  const medicalAidCredit = Math.min(medicalAidCreditBase, medicalAidCreditCap);
+  const totalPaye = Math.max(0, payeBeforeLevy + aidsLevy - medicalAidCredit - taxCredits);
+
+  const totalDeductions = nssaEmployee + pensionContribution + medicalAid + totalPaye + uifEmployee;
+  const netSalary = totalEarnings - totalDeductions;
 
   return {
-    grossSalary: cashEarnings,
+    grossSalary: totalEarnings,
     taxableBenefits,
     exemptBonus,
     exemptSeverance,
@@ -203,13 +224,87 @@ function calculatePaye({
     nssaEmployer,
     wcifEmployer,
     sdfContribution,
+    uifEmployee,
+    uifEmployer,
     taxableIncome,
     payeBeforeLevy,
     medicalAidCredit,
     aidsLevy,
     totalPaye,
     netSalary,
+    taxDirectiveApplied,
   };
 }
 
-module.exports = { calculatePaye, loadStatutoryRates, getStatutoryRates: () => STATUTORY_RATES, DEFAULT_STATUTORY_RATES, USD_TAX_BANDS_2024, ZIG_TAX_BANDS_2024 };
+function calculateAidsLevy(payeBeforeLevy, employmentType, currency) {
+  const threshold = currency === 'ZiG' 
+    ? STATUTORY_RATES.AIDS_LEVY_EXEMPTION_THRESHOLD_ZIG 
+    : STATUTORY_RATES.AIDS_LEVY_EXEMPTION_THRESHOLD_USD;
+  
+  if (payeBeforeLevy <= threshold) {
+    return 0;
+  }
+
+  if (employmentType === 'CONTRACT' || employmentType === 'TEMPORARY') {
+    const proportion = Math.max(0, (payeBeforeLevy - threshold) / payeBeforeLevy);
+    return payeBeforeLevy * STATUTORY_RATES.AIDS_LEVY * proportion;
+  }
+
+  return payeBeforeLevy * STATUTORY_RATES.AIDS_LEVY;
+}
+
+function calculateLeaveTaxTreatment({
+  leaveType,
+  leaveDays,
+  dailyRate,
+  employmentType,
+  statutoryDays = { MATERNITY: 98, SICK: 90 },
+}) {
+  const results = {
+    MATERNITY: {
+      first28DaysTaxable: true,
+      remainingDaysTaxable: employmentType === 'CONTRACT',
+      first28Days: Math.min(28, leaveDays) * dailyRate,
+      remainingDays: Math.max(0, leaveDays - 28) * dailyRate,
+      taxableAmount: 0,
+      exemptAmount: 0,
+    },
+    SICK: {
+      first30DaysTaxable: true,
+      remainingDaysPartiallyExempt: true,
+      fullPayDays: Math.min(30, leaveDays),
+      halfPayDays: Math.max(0, leaveDays - 30),
+      taxableAmount: 0,
+      exemptAmount: 0,
+    },
+  };
+
+  if (leaveType === 'MATERNITY') {
+    const first28 = Math.min(28, leaveDays);
+    const remaining = Math.max(0, leaveDays - 28);
+    
+    results.MATERNITY.taxableAmount = employmentType === 'CONTRACT' ? leaveDays * dailyRate : first28 * dailyRate;
+    results.MATERNITY.exemptAmount = employmentType === 'CONTRACT' ? 0 : remaining * dailyRate;
+  }
+
+  if (leaveType === 'SICK') {
+    const fullPayDays = Math.min(30, leaveDays);
+    const halfPayDays = Math.max(0, leaveDays - 30);
+    
+    results.SICK.taxableAmount = fullPayDays * dailyRate + (halfPayDays * dailyRate * 0.5);
+    results.SICK.exemptAmount = halfPayDays * dailyRate * 0.5;
+  }
+
+  return results[leaveType] || { taxableAmount: leaveDays * dailyRate, exemptAmount: 0 };
+}
+
+module.exports = {
+  calculatePaye,
+  loadStatutoryRates,
+  getStatutoryRates: () => STATUTORY_RATES,
+  DEFAULT_STATUTORY_RATES,
+  USD_TAX_BANDS_2024,
+  ZIG_TAX_BANDS_2024,
+  calculateAidsLevy,
+  calculateLeaveTaxTreatment,
+};

@@ -13,13 +13,25 @@ describe('Tax Engine — Zimbabwean PAYE (FDS)', () => {
     // NSSA: min(1500, 700) * 0.045 = 31.5
     // Taxable Income: 1500 - 31.5 = 1468.5
     // Band 1000-2000: 215 + (1468.5 - 1000) * 0.30 = 215 + 140.55 = 355.55
-    // Aids levy: 355.55 * 0.03 = 10.6665
-    // Total paye: 355.55 + 10.6665 = 366.2165
+    // Aids levy: 0 (below 500 threshold)
+    // Total paye: 355.55
     
     const result = calculatePaye({ baseSalary: 1500, currency: 'USD' });
     expect(result.payeBeforeLevy).toBeCloseTo(355.55, 2);
-    expect(result.aidsLevy).toBeCloseTo(10.67, 2);
-    expect(result.totalPaye).toBeCloseTo(366.22, 2);
+    expect(result.aidsLevy).toBe(0); // Below AIDS levy threshold of 500
+    expect(result.totalPaye).toBeCloseTo(355.55, 2);
+  });
+
+  it('should apply AIDS levy above threshold', () => {
+    // 2000 USD:
+    // NSSA: min(2000, 700) * 0.045 = 31.5
+    // Taxable Income: 2000 - 31.5 = 1968.5
+    // Band 1000-2000: 215 + (1968.5 - 1000) * 0.30 = 215 + 290.55 = 505.55
+    // Aids levy: 505.55 * 0.03 = 15.1665
+    
+    const result = calculatePaye({ baseSalary: 2000, currency: 'USD' });
+    expect(result.payeBeforeLevy).toBeCloseTo(505.55, 2);
+    expect(result.aidsLevy).toBeGreaterThan(0);
   });
 
   it('should apply NSSA ceiling correctly', () => {

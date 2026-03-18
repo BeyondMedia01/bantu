@@ -43,16 +43,16 @@ router.post('/', requirePermission('approve_payroll'), async (req, res) => {
         data: { status: 'COMPLETED' },
       });
 
-      // Mark loan repayments due within the period as DUE (if not already paid)
+      // Mark loan repayments due within the period as UNPAID (if not already paid)
       const { count: repaymentsMarked } = await tx.loanRepayment.updateMany({
         where: {
-          status: 'PENDING',
+          status: 'UNPAID',
           dueDate: {
             gte: calendar.startDate,
             lte: calendar.endDate,
           },
         },
-        data: { status: 'DUE' },
+        data: { status: 'UNPAID' },
       });
 
       return { closedCalendar, runsCompleted, repaymentsMarked };

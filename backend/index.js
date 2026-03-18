@@ -119,9 +119,14 @@ app.use((err, _req, res, _next) => {
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server environment: ${process.env.NODE_ENV}`);
   console.log(`Server running on port ${PORT}`);
+  
+  // Load statutory rates from SystemSettings
+  const prisma = require('./lib/prisma');
+  const { loadStatutoryRates } = require('./utils/taxEngine');
+  await loadStatutoryRates(prisma);
 });
 
 process.on('SIGINT', async () => {

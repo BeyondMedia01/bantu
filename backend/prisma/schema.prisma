@@ -172,6 +172,7 @@ model Employee {
   motorVehicleType    String?
   leaveBalance        Float                @default(0)
   leaveTaken          Float                @default(0)
+  lastSalaryChangeDate DateTime?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
   splitUsdPercent     Float?

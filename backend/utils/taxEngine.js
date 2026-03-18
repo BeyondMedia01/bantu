@@ -3,12 +3,56 @@
  * Final Deduction System implementation based on ZIMRA guidelines.
  */
 
-const STATUTORY_RATES = {
+const DEFAULT_STATUTORY_RATES = {
   AIDS_LEVY: 0.03,
   NSSA_EMPLOYEE: 0.045,
   NSSA_EMPLOYER: 0.045,
   MEDICAL_AID_CREDIT_RATE: 0.50,
 };
+
+let STATUTORY_RATES = { ...DEFAULT_STATUTORY_RATES };
+
+/**
+ * Load statutory rates from SystemSettings
+ * Call this on server startup and after settings changes
+ */
+async function loadStatutoryRates(prisma) {
+  try {
+    const settings = await prisma.systemSetting.findMany({
+      where: {
+        settingName: {
+          in: ['AIDS_LEVY_RATE', 'NSSA_EMPLOYEE_RATE', 'NSSA_EMPLOYER_RATE', 'NSSA_CEILING_USD', 'PENSION_CAP_RATE'],
+        },
+        isActive: true,
+      },
+    });
+    
+    const rates = {};
+    for (const s of settings) {
+      if (s.settingName === 'AIDS_LEVY_RATE') rates.AIDS_LEVY = parseFloat(s.settingValue) / 100;
+      if (s.settingName === 'NSSA_EMPLOYEE_RATE') rates.NSSA_EMPLOYEE = parseFloat(s.settingValue) / 100;
+      if (s.settingName === 'NSSA_EMPLOYER_RATE') rates.NSSA_EMPLOYER = parseFloat(s.settingValue) / 100;
+      if (s.settingName === 'NSSA_CEILING_USD') rates.NSSA_CEILING = parseFloat(s.settingValue);
+      if (s.settingName === 'PENSION_CAP_RATE') rates.PENSION_CAP = parseFloat(s.settingValue) / 100;
+    }
+    
+    if (Object.keys(rates).length > 0) {
+      STATUTORY_RATES = { ...DEFAULT_STATUTORY_RATES, ...rates };
+      console.log('Statutory rates loaded from settings:', STATUTORY_RATES);
+    }
+  } catch (err) {
+    console.error('Failed to load statutory rates from settings:', err.message);
+  }
+}
+
+module.exports = {
+  calculatePaye,
+  loadStatutoryRates,
+  DEFAULT_STATUTORY_RATES,
+  getStatutoryRates: () => STATUTORY_RATES,
+};
+
+// 2024 USD Tax Bands (Monthly) — used as fallback when no DB bands are provided
 
 // 2024 USD Tax Bands (Monthly) — used as fallback when no DB bands are provided
 const USD_TAX_BANDS_2024 = [
@@ -162,4 +206,4 @@ function calculatePaye({
   };
 }
 
-module.exports = { calculatePaye, STATUTORY_RATES, USD_TAX_BANDS_2024, ZIG_TAX_BANDS_2024 };
+module.exports = { calculatePaye, loadStatutoryRates, getStatutoryRates: () => STATUTORY_RATES, DEFAULT_STATUTORY_RATES, USD_TAX_BANDS_2024, ZIG_TAX_BANDS_2024 };

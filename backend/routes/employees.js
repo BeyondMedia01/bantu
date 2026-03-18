@@ -468,12 +468,29 @@ router.put('/:id', requirePermission('manage_employees'), async (req, res) => {
 
     const employee = await prisma.employee.update({ where: { id: req.params.id }, data });
 
+    // Log salary/rate changes with old and new values
+    const auditDetails = { fields: Object.keys(data) };
+    if (data.baseRate !== undefined && data.baseRate !== existing.baseRate) {
+      auditDetails.salaryChange = {
+        field: 'baseRate',
+        oldValue: existing.baseRate,
+        newValue: data.baseRate,
+        effectiveDate: data.effectiveDate || new Date().toISOString().split('T')[0],
+      };
+    }
+    if (data.position !== undefined && data.position !== existing.position) {
+      auditDetails.positionChange = {
+        oldValue: existing.position,
+        newValue: data.position,
+      };
+    }
+
     await audit({
       req,
       action: 'EMPLOYEE_UPDATED',
       resource: 'employee',
       resourceId: employee.id,
-      details: { fields: Object.keys(data) },
+      details: auditDetails,
     });
 
     res.json(employee);

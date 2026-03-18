@@ -66,6 +66,7 @@ import PayIncrease from './pages/utilities/PayIncrease';
 import PeriodEnd from './pages/utilities/PeriodEnd';
 import NSSASettings from './pages/utilities/NSSASettings';
 import PayrollCalendar from './pages/utilities/PayrollCalendar';
+import RetroactivePayWizard from './pages/utilities/RetroactivePayWizard';
 
 // Admin (PLATFORM_ADMIN)
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -155,6 +156,7 @@ const App: React.FC = () => {
           <Route path="/license" element={<License />} />
 
           <Route path="/utilities" element={<UtilitiesHub />} />
+          <Route path="/utilities/retroactive-pay" element={<RetroactivePayWizard />} />
           <Route path="/utilities/company-structure" element={<ClientAdminStructure />} />
           <Route path="/utilities/transactions" element={<Transactions />} />
           <Route path="/utilities/back-pay" element={<BackPay />} />

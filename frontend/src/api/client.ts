@@ -224,6 +224,13 @@ export const TransactionCodeAPI = {
   deleteRule: (codeId: string, ruleId: string) => api.delete(`/transactions/${codeId}/rules/${ruleId}`),
 };
 
+export const RetroactivePayAPI = {
+  getEmployees: () => api.get<any[]>('/retroactive/employees'),
+  calculate: (data: any) => api.post('/retroactive/calculate', data),
+  apply: (data: any) => api.post('/retroactive/apply', data),
+  getHistory: () => api.get<any[]>('/retroactive/history'),
+};
+
 export const TaxTableAPI = {
   getAll: (params?: Record<string, string>) => api.get<any[]>('/tax-tables', { params }),
   getById: (id: string) => api.get(`/tax-tables/${id}`),

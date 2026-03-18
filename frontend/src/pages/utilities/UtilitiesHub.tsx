@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, RefreshCw, Calendar, FileText, Percent, CalendarDays, Building2 } from 'lucide-react';
+import { TrendingUp, RefreshCw, Calendar, FileText, Percent, CalendarDays, Building2, Calculator } from 'lucide-react';
 
 const UTILITIES = [
   {
@@ -10,6 +10,14 @@ const UTILITIES = [
     description: 'Manage branches, departments and sub-companies for the active company',
     color: 'text-slate-600',
     bg: 'bg-slate-100',
+  },
+  {
+    path: '/utilities/retroactive-pay',
+    icon: <Calculator size={24} />,
+    title: 'Retroactive Pay',
+    description: 'Calculate and apply back-pay for employee rate changes',
+    color: 'text-indigo-600',
+    bg: 'bg-indigo-50',
   },
   {
     path: '/utilities/payroll-calendar',

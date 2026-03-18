@@ -77,6 +77,7 @@ app.use('/api/payslips', require('./routes/payslips'));
 app.use('/api/payroll-calendar', require('./routes/payrollCalendar'));
 app.use('/api/payroll-inputs', require('./routes/payrollInputs'));
 app.use('/api/transactions', require('./routes/transactions'));
+app.use('/api/retroactive', require('./routes/retroactive'));
 app.use('/api/tax-tables', require('./routes/taxTables'));
 app.use('/api/grades', require('./routes/grades'));
 

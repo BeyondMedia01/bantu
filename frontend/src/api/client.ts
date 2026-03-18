@@ -209,12 +209,19 @@ export const PayrollInputAPI = {
 };
 
 export const TransactionCodeAPI = {
-  getAll: (params?: Record<string, string>) => api.get<any[]>('/transaction-codes', { params }),
-  getById: (id: string) => api.get(`/transaction-codes/${id}`),
-  create: (data: any) => api.post('/transaction-codes', data),
-  update: (id: string, data: any) => api.put(`/transaction-codes/${id}`, data),
-  delete: (id: string) => api.delete(`/transaction-codes/${id}`),
+  getAll: (params?: Record<string, string>) => api.get<any[]>('/transactions', { params }),
+  getById: (id: string) => api.get(`/transactions/${id}`),
+  create: (data: any) => api.post('/transactions', data),
+  update: (id: string, data: any) => api.put(`/transactions/${id}`, data),
+  delete: (id: string) => api.delete(`/transactions/${id}`),
   import: (rows: any[]) => api.post('/transactions/import', { rows }),
+  getEmployeeTransactions: (employeeId: string) => api.get(`/transactions/employee/${employeeId}`),
+  addEmployeeTransaction: (employeeId: string, data: any) => api.post(`/transactions/employee/${employeeId}`, data),
+  updateEmployeeTransaction: (id: string, data: any) => api.put(`/transactions/employee/${id}`, data),
+  deleteEmployeeTransaction: (id: string) => api.delete(`/transactions/employee/${id}`),
+  addRule: (codeId: string, data: any) => api.post(`/transactions/${codeId}/rules`, data),
+  updateRule: (codeId: string, ruleId: string, data: any) => api.put(`/transactions/${codeId}/rules/${ruleId}`, data),
+  deleteRule: (codeId: string, ruleId: string) => api.delete(`/transactions/${codeId}/rules/${ruleId}`),
 };
 
 export const TaxTableAPI = {

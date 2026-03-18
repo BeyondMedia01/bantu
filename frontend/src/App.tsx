@@ -39,6 +39,7 @@ import LoanDetail from './pages/LoanDetail';
 
 // Reports
 import Reports from './pages/Reports';
+import PortalExports from './pages/PortalExports';
 
 // Org structure
 import ClientAdminStructure from './pages/ClientAdminStructure';
@@ -141,6 +142,7 @@ const App: React.FC = () => {
           <Route path="/loans/:id" element={<LoanDetail />} />
 
           <Route path="/reports" element={<Reports />} />
+          <Route path="/portal-exports" element={<PortalExports />} />
 
           <Route path="/companies" element={<Companies />} />
           <Route path="/companies/new" element={<CompanyNew />} />

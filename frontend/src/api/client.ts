@@ -231,6 +231,17 @@ export const RetroactivePayAPI = {
   getHistory: () => api.get<any[]>('/retroactive/history'),
 };
 
+export const PortalExportAPI = {
+  downloadZimra: (params?: Record<string, string>) => 
+    api.get('/portals/zimra', { params, responseType: 'blob' }),
+  downloadNssa: (params?: Record<string, string>) => 
+    api.get('/portals/nssa', { params, responseType: 'blob' }),
+  downloadP4A: (year: number) => 
+    api.get(`/portals/nssa/p4a`, { params: { year: String(year) }, responseType: 'blob' }),
+  downloadPSL8: (employeeId: string) => 
+    api.get(`/portals/psl8/${employeeId}`, { responseType: 'blob' }),
+};
+
 export const TaxTableAPI = {
   getAll: (params?: Record<string, string>) => api.get<any[]>('/tax-tables', { params }),
   getById: (id: string) => api.get(`/tax-tables/${id}`),

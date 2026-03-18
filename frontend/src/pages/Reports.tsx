@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { FileText, Download, Clock, ShieldCheck, FileSpreadsheet, Scale, BarChart2, Users, BookOpen } from 'lucide-react';
+import { FileText, Download, Clock, ShieldCheck, FileSpreadsheet, Scale, BarChart2, Users, BookOpen, ArrowRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { ReportsAPI } from '../api/client';
 import { getActiveCompanyId } from '../lib/companyContext';
 
@@ -14,6 +15,7 @@ const currentYear = new Date().getFullYear();
 const YEARS = [currentYear, currentYear - 1, currentYear - 2];
 
 const Reports: React.FC = () => {
+  const navigate = useNavigate();
   const companyId = getActiveCompanyId();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
@@ -148,6 +150,25 @@ const Reports: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-xs bg-slate-200 text-slate-500 font-bold px-3 py-1 rounded-full uppercase tracking-wider">Scheduled</span>
+              </div>
+
+              {/* Portal Exports Quick Link */}
+              <div className="bg-indigo-50 rounded-2xl border border-indigo-200 shadow-sm p-5 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-11 h-11 bg-indigo-100 text-indigo-600 rounded-xl flex items-center justify-center shrink-0">
+                    <ShieldCheck size={22} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-indigo-900">Portal Exports</p>
+                    <p className="text-xs text-indigo-600 font-semibold">ZIMRA & NSSA filing-ready files</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate('/portal-exports')}
+                  className="bg-indigo-600 text-white px-5 py-2 rounded-full font-bold text-sm shadow hover:bg-indigo-700 flex items-center gap-2"
+                >
+                  Open <ArrowRight size={15} />
+                </button>
               </div>
             </div>
           </div>

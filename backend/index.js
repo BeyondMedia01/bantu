@@ -84,6 +84,7 @@ app.use('/api/grades', require('./routes/grades'));
 
 // Leave & Loans
 app.use('/api/leave', require('./routes/leave'));
+app.use('/api/leave-management', require('./routes/leaveManagement'));
 app.use('/api/loans', require('./routes/loans'));
 
 // License management (PLATFORM_ADMIN)

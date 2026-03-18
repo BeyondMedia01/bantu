@@ -274,13 +274,70 @@ export const GradeAPI = {
 // ─── Leave ────────────────────────────────────────────────────────────────────
 
 export const LeaveAPI = {
-  getAll: (params?: Record<string, string>) => api.get<{ records: any[]; requests: any[] }>('/leave', { params }), // Special Case
+  getAll: (params?: Record<string, string>) => api.get<{ records: any[]; requests: any[] }>('/leave', { params }),
   getById: (id: string) => api.get(`/leave/${id}`),
   create: (data: any) => api.post('/leave', data),
   update: (id: string, data: any) => api.put(`/leave/${id}`, data),
   delete: (id: string) => api.delete(`/leave/${id}`),
   approve: (id: string, note?: string) => api.put(`/leave/request/${id}/approve`, { note }),
   reject: (id: string, note?: string) => api.put(`/leave/request/${id}/reject`, { note }),
+};
+
+export interface LeaveType {
+  id: string;
+  code: string;
+  name: string;
+  accrualRate: number;
+  accrualPeriod: string;
+  maxCarryOver: number;
+  maxAccumulation: number;
+  encashable: boolean;
+  encashmentRate: number | null;
+  requiresApproval: boolean;
+  isActive: boolean;
+}
+
+export interface LeaveBalance {
+  id: string;
+  employeeId: string;
+  leaveTypeId: string;
+  year: number;
+  accruedDays: number;
+  broughtForward: number;
+  usedDays: number;
+  encashedDays: number;
+  carriedOver: number;
+  leaveType: LeaveType;
+}
+
+export interface LeaveEncashment {
+  id: string;
+  employeeId: string;
+  leaveTypeId: string;
+  days: number;
+  dailyRate: number;
+  totalAmount: number;
+  status: 'PENDING' | 'APPROVED' | 'PROCESSED' | 'REJECTED';
+  requestDate: string;
+  processedAt?: string;
+  notes?: string;
+  employee?: { firstName: string; lastName: string; employeeCode: string };
+  leaveType?: LeaveType;
+}
+
+export const LeaveManagementAPI = {
+  getLeaveTypes: () => api.get<LeaveType[]>('/leave/types'),
+  createLeaveType: (data: Partial<LeaveType>) => api.post<LeaveType>('/leave/types', data),
+  updateLeaveType: (id: string, data: Partial<LeaveType>) => api.put<LeaveType>(`/leave/types/${id}`, data),
+  getEmployeeBalances: (employeeId: string) => api.get<LeaveBalance[]>(`/leave/balances/${employeeId}`),
+  runAccrual: (year?: number, month?: number) => api.post('/leave/accrue', { year, month }),
+  requestEncashment: (data: { employeeId: string; leaveTypeId: string; days: number; notes?: string }) =>
+    api.post<LeaveEncashment>('/leave/encash', data),
+  getEncashments: (params?: { status?: string; employeeId?: string }) =>
+    api.get<LeaveEncashment[]>('/leave/encashments', { params }),
+  approveEncashment: (id: string) => api.post(`/leave/encash/${id}/approve`),
+  processEncashment: (id: string) => api.post(`/leave/encash/${id}/process`),
+  runYearEnd: (fromYear?: number, toYear?: number) => api.post('/leave/year-end', { fromYear, toYear }),
 };
 
 // ─── Loans ────────────────────────────────────────────────────────────────────

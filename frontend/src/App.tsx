@@ -68,6 +68,8 @@ import PeriodEnd from './pages/utilities/PeriodEnd';
 import NSSASettings from './pages/utilities/NSSASettings';
 import PayrollCalendar from './pages/utilities/PayrollCalendar';
 import RetroactivePayWizard from './pages/utilities/RetroactivePayWizard';
+import LeaveConfiguration from './pages/utilities/LeaveConfiguration';
+import LeaveEncashmentPage from './pages/utilities/LeaveEncashment';
 
 // Admin (PLATFORM_ADMIN)
 import AdminDashboard from './pages/admin/AdminDashboard';
@@ -168,6 +170,8 @@ const App: React.FC = () => {
           <Route path="/utilities/nec-tables" element={<NecTables />} />
           <Route path="/utilities/nssa" element={<NSSASettings />} />
           <Route path="/utilities/payroll-calendar" element={<PayrollCalendar />} />
+          <Route path="/utilities/leave-configuration" element={<LeaveConfiguration />} />
+          <Route path="/utilities/leave-encashment" element={<LeaveEncashmentPage />} />
         </Route>
 
         {/* Admin (PLATFORM_ADMIN only) */}

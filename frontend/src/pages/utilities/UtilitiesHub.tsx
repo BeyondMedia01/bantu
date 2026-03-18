@@ -1,6 +1,6 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { TrendingUp, RefreshCw, Calendar, FileText, Percent, CalendarDays, Building2, Calculator } from 'lucide-react';
+import { TrendingUp, RefreshCw, Calendar, FileText, Percent, CalendarDays, Building2, Calculator, Wallet, Settings } from 'lucide-react';
 
 const UTILITIES = [
   {
@@ -74,6 +74,22 @@ const UTILITIES = [
     description: 'Configure National Social Security Authority contribution rates and earnings ceiling',
     color: 'text-teal-600',
     bg: 'bg-teal-50',
+  },
+  {
+    path: '/utilities/leave-configuration',
+    icon: <Settings size={24} />,
+    title: 'Leave Configuration',
+    description: 'Configure leave types, accrual rates, caps, carry-over, and encashment options',
+    color: 'text-cyan-600',
+    bg: 'bg-cyan-50',
+  },
+  {
+    path: '/utilities/leave-encashment',
+    icon: <Wallet size={24} />,
+    title: 'Leave Encashment',
+    description: 'Request and manage employee leave encashments',
+    color: 'text-orange-600',
+    bg: 'bg-orange-50',
   },
 ];
 

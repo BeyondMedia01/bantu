@@ -617,6 +617,89 @@ enum LeaveStatus {
   CANCELLED
 }
 
+enum LeaveEncashmentStatus {
+  PENDING
+  APPROVED
+  PROCESSED
+  REJECTED
+}
+
+model LeaveType {
+  id                    String   @id @default(uuid())
+  clientId              String
+  code                  String   // e.g., ANNUAL, SICK, MATERNITY
+  name                  String
+  accrualRate          Float    @default(0) // days per month
+  accrualPeriod        String   @default("MONTHLY") // MONTHLY, YEARLY
+  maxCarryOver         Float    @default(0) // max days carried over to next year
+  maxAccumulation      Float    @default(90) // cap on accumulation
+  isActive             Boolean  @default(true)
+  encashable           Boolean  @default(false) // can be converted to cash
+  encashmentRate       Float?   // daily rate for encashment (percentage of daily salary)
+  requiresApproval     Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  client               Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  balances             LeaveBalance[]
+  encashments          LeaveEncashment[]
+  entitlements         LeaveEntitlement[]
+
+  @@unique([clientId, code])
+}
+
+model LeaveEntitlement {
+  id            String     @id @default(uuid())
+  employeeId    String
+  leaveTypeId   String
+  year          Int
+  entitledDays  Float      @default(0)
+  effectiveFrom DateTime  @default(now())
+  createdAt     DateTime   @default(now())
+  employee      Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType  @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+model LeaveBalance {
+  id            String     @id @default(uuid())
+  employeeId    String
+  leaveTypeId   String
+  year          Int
+  broughtForward Float    @default(0) // days from previous year
+  accruedDays   Float     @default(0) // days accrued this year
+  usedDays      Float     @default(0) // days taken
+  encashedDays  Float     @default(0) // days converted to cash
+  carriedOver  Float     @default(0) // days carried to next year
+  asOfDate     DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  employee     Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType    LeaveType  @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, year])
+}
+
+model LeaveEncashment {
+  id            String               @id @default(uuid())
+  employeeId    String
+  leaveTypeId   String
+  days          Float
+  dailyRate     Float
+  totalAmount   Float
+  status        LeaveEncashmentStatus @default(PENDING)
+  processedAt   DateTime?
+  processedBy   String?
+  requestDate   DateTime  @default(now())
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  employee      Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType     LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, leaveTypeId, requestDate])
+}
+
 enum LoanStatus {
   ACTIVE
   PAID_OFF

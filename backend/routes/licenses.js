@@ -8,11 +8,11 @@ const adminOnly = requireRole('PLATFORM_ADMIN');
 
 // POST /api/license/issue
 router.post('/issue', adminOnly, async (req, res) => {
-  const { clientId, employeeCap, expiryMonths } = req.body;
+  const { clientId, employeeCap, expiryMonths, organizationName } = req.body;
   if (!clientId) return res.status(400).json({ message: 'clientId is required' });
 
   try {
-    const license = await issueLicense(clientId, employeeCap || 10, expiryMonths || 12);
+    const license = await issueLicense(clientId, employeeCap || 10, expiryMonths || 12, organizationName);
     res.status(201).json(license);
   } catch (error) {
     console.error(error);

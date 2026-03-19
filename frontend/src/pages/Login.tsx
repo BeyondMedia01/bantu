@@ -23,7 +23,8 @@ const Login: React.FC = () => {
     setError('');
     setLoading(true);
     try {
-      const res = await AuthAPI.login({ email, password });
+      const deviceId = localStorage.getItem('deviceId');
+      const res = await AuthAPI.login({ email, password, deviceId: deviceId || undefined });
       const { token, companyId, role } = res.data;
       saveAuthData(token, companyId);
 

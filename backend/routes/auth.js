@@ -3,24 +3,39 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const prisma = require('../lib/prisma');
 const { signToken } = require('../lib/auth');
-const { validateLicense } = require('../lib/license');
+const { validateLicense, redeemLicense, hashToken } = require('../lib/license');
 const { sendPasswordReset } = require('../lib/mailer');
 
 const router = express.Router();
 
-// POST /api/auth/register — CLIENT_ADMIN registration with license token
+const generateDeviceId = () => crypto.randomBytes(16).toString('hex');
+
 router.post('/register', async (req, res) => {
-  const { name, email, password, licenseToken } = req.body;
+  const { name, email, password, licenseToken, organizationName, deviceId } = req.body;
 
   if (!name || !email || !password || !licenseToken) {
     return res.status(400).json({ message: 'name, email, password, and licenseToken are required' });
   }
 
-  const { valid, license, reason, warning } = await validateLicense(licenseToken);
+  const actualDeviceId = deviceId || generateDeviceId();
+  const { valid, license, reason, warning, employeeCount, employeeCap } = await validateLicense(licenseToken, actualDeviceId);
+  
   if (!valid) return res.status(400).json({ message: `Invalid license: ${reason}` });
 
   try {
     const hashedPassword = await bcrypt.hash(password, 12);
+
+    let client;
+    if (license.redeemedAt) {
+      client = await prisma.client.findUnique({ where: { id: license.clientId } });
+    } else {
+      client = await prisma.client.create({
+        data: {
+          name: organizationName || 'My Organization',
+          isActive: true,
+        },
+      });
+    }
 
     const user = await prisma.user.create({
       data: {
@@ -28,24 +43,31 @@ router.post('/register', async (req, res) => {
         email,
         password: hashedPassword,
         role: 'CLIENT_ADMIN',
-        clientAdmin: { create: { clientId: license.clientId } },
+        clientAdmin: { create: { clientId: client.id } },
       },
     });
 
-    // Mark license as redeemed (single-use)
-    await prisma.licenseToken.update({
-      where: { token: licenseToken },
-      data: { redeemedAt: new Date() },
-    });
+    if (!license.redeemedAt) {
+      await redeemLicense(licenseToken, actualDeviceId);
+      await prisma.device.create({
+        data: {
+          deviceId: actualDeviceId,
+          clientId: client.id,
+          licenseToken: hashToken(licenseToken),
+        },
+      });
+    }
 
-    const token = signToken({ userId: user.id, role: user.role, clientId: license.clientId });
+    const token = signToken({ userId: user.id, role: user.role, clientId: client.id });
     res.status(201).json({
       token,
       role: user.role,
-      clientId: license.clientId,
-      clientName: license.client.name,
-      employeeCap: license.employeeCap,
+      clientId: client.id,
+      clientName: client.name,
+      employeeCap,
+      employeeCount,
       expiresAt: license.expiresAt,
+      deviceId: actualDeviceId,
       warning
     });
   } catch (error) {
@@ -57,20 +79,8 @@ router.post('/register', async (req, res) => {
   }
 });
 
-    const token = signToken({ userId: user.id, role: user.role, clientId: license.clientId });
-    res.status(201).json({ token, role: user.role, clientId: license.clientId });
-  } catch (error) {
-    if (error.code === 'P2002') {
-      return res.status(409).json({ message: 'Email already registered' });
-    }
-    console.error('Registration error:', error);
-    res.status(500).json({ message: 'Registration failed' });
-  }
-});
-
-// POST /api/auth/login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, deviceId } = req.body;
   if (!email || !password) {
     return res.status(400).json({ message: 'email and password are required' });
   }
@@ -90,6 +100,26 @@ router.post('/login', async (req, res) => {
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials' });
 
     const clientId = user.clientAdmin?.clientId ?? user.employee?.clientId ?? null;
+
+    if (clientId) {
+      const license = await prisma.licenseToken.findUnique({ where: { clientId } });
+      if (license) {
+        if (!license.active) return res.status(403).json({ message: 'License has been revoked' });
+        if (license.expiresAt < new Date()) return res.status(403).json({ message: 'License has expired' });
+        if (license.redeemedDeviceId && license.redeemedDeviceId !== deviceId) {
+          return res.status(403).json({ message: 'License activated on another device' });
+        }
+      }
+    }
+
+    if (deviceId && clientId) {
+      await prisma.device.upsert({
+        where: { deviceId },
+        update: { lastLoginAt: new Date() },
+        create: { deviceId, clientId },
+      });
+    }
+
     const companyId = user.employee?.companyId ?? null;
     const employeeId = user.employee?.id ?? null;
 

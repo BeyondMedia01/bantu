@@ -53,6 +53,7 @@ model Client {
   taxTables        TaxTable[]
   transactionCodes TransactionCode[]
   leaveTypes       LeaveType[]
+  devices          Device[]
 }
 
 model ClientAdmin {
@@ -500,16 +501,19 @@ model LoanRepayment {
 }
 
 model LicenseToken {
-  id          String    @id @default(uuid())
-  clientId    String    @unique
-  token       String    @unique
-  expiresAt   DateTime
-  active      Boolean   @default(true)
-  redeemedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  employeeCap Int       @default(10)
-  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  id              String    @id @default(uuid())
+  clientId        String    @unique
+  token           String    @unique
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  active          Boolean   @default(true)
+  redeemedAt      DateTime?
+  redeemedDeviceId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  employeeCap     Int       @default(10)
+  organizationName String?
+  client          Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model Subscription {
@@ -559,6 +563,23 @@ model AuditLog {
   @@index([resource, resourceId])
   @@index([userId])
   @@index([createdAt])
+}
+
+model Device {
+  id            String   @id @default(uuid())
+  deviceId      String   @unique
+  deviceName    String?
+  clientId      String
+  licenseToken  String
+  firstLoginAt  DateTime @default(now())
+  lastLoginAt   DateTime @default(now())
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@index([deviceId])
 }
 
 enum UserRole {

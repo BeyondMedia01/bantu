@@ -48,8 +48,8 @@ api.interceptors.response.use(
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 export const AuthAPI = {
-  login: (data: { email: string; password: string }) => api.post('/auth/login', data),
-  register: (data: { name: string; email: string; password: string; licenseToken: string }) =>
+  login: (data: { email: string; password: string; deviceId?: string }) => api.post('/auth/login', data),
+  register: (data: { name: string; email: string; password: string; licenseToken: string; organizationName?: string; deviceId?: string }) =>
     api.post('/auth/register', data),
   forgotPassword: (email: string) => api.post('/auth/forgot-password', { email }),
   resetPassword: (token: string, password: string) =>

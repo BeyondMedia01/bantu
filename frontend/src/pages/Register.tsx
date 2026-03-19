@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, Key, ArrowRight } from 'lucide-react';
+import { Mail, Lock, User, Key, ArrowRight, Building2 } from 'lucide-react';
 import { AuthAPI } from '../api/client';
 
 const Register: React.FC = () => {
   const navigate = useNavigate();
   const [form, setForm] = useState({
+    organizationName: '',
     name: '',
     email: '',
     password: '',
@@ -28,6 +29,7 @@ const Register: React.FC = () => {
         setLoading(false);
         return;
       }
+      localStorage.setItem('deviceId', response.data.deviceId);
       navigate('/login');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Registration failed');
@@ -55,8 +57,9 @@ const Register: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
           {[
-            { field: 'name', label: 'Full Name', icon: <User size={18} />, type: 'text', placeholder: 'Jane Smith' },
-            { field: 'email', label: 'Email Address', icon: <Mail size={18} />, type: 'email', placeholder: 'jane@company.com' },
+            { field: 'organizationName', label: 'Organization Name', icon: <Building2 size={18} />, type: 'text', placeholder: 'Acme Corporation' },
+            { field: 'name', label: 'Admin Name', icon: <User size={18} />, type: 'text', placeholder: 'Jane Smith' },
+            { field: 'email', label: 'Admin Email', icon: <Mail size={18} />, type: 'email', placeholder: 'jane@company.com' },
             { field: 'password', label: 'Password', icon: <Lock size={18} />, type: 'password', placeholder: '••••••••' },
             { field: 'licenseToken', label: 'License Token', icon: <Key size={18} />, type: 'text', placeholder: 'Enter your license token' },
           ].map(({ field, label, icon, type, placeholder }) => (

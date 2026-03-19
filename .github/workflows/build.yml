@@ -25,6 +25,9 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && npm install
 
+      - name: Install backend dependencies
+        run: cd backend && npm install
+
       - name: Build Tauri app (macOS)
         run: cd frontend/src-tauri && npm run tauri build
         env:
@@ -55,6 +58,9 @@ jobs:
 
       - name: Install frontend dependencies
         run: cd frontend; npm install
+
+      - name: Install backend dependencies
+        run: cd backend; npm install
 
       - name: Build Tauri app (Windows)
         run: cd frontend/src-tauri; npm run tauri build

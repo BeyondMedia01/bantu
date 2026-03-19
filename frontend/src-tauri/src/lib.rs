@@ -266,6 +266,12 @@ async fn start_backend(app: AppHandle) -> Result<ServerStatus, String> {
     
     log::info!("Starting backend from: {}", backend_dir_str);
     
+    #[cfg(target_os = "windows")]
+    let child = std::process::Command::new("cmd")
+        .args(&["/C", &format!("cd /d \"{}\" && npm run dev", backend_dir_str)])
+        .spawn();
+    
+    #[cfg(not(target_os = "windows"))]
     let child = std::process::Command::new("sh")
         .args(&["-c", &format!("cd '{}' && npm run dev &", backend_dir_str)])
         .spawn();

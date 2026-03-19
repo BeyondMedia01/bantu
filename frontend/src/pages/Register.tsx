@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, Key, ArrowRight } from 'lucide-react';
+import { Mail, Lock, User, Key, ArrowRight, CheckCircle } from 'lucide-react';
 import { AuthAPI } from '../api/client';
 
 const Register: React.FC = () => {
@@ -9,10 +9,10 @@ const Register: React.FC = () => {
     name: '',
     email: '',
     password: '',
-    licenseToken: '',
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState<{ token: string; message: string } | null>(null);
 
   const set = (field: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [field]: e.target.value }));
@@ -22,14 +22,67 @@ const Register: React.FC = () => {
     setError('');
     setLoading(true);
     try {
-      await AuthAPI.register(form);
-      navigate('/login');
+      const response = await AuthAPI.register(form);
+      if (response.data.licenseToken) {
+        setSuccess({
+          token: response.data.licenseToken,
+          message: response.data.message,
+        });
+      } else {
+        navigate('/login');
+      }
     } catch (err: any) {
       setError(err.response?.data?.message || 'Registration failed');
     } finally {
       setLoading(false);
     }
   };
+
+  const copyToken = () => {
+    if (success?.token) {
+      navigator.clipboard.writeText(success.token);
+    }
+  };
+
+  if (success) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 font-inter">
+        <div className="flex items-center gap-3 mb-10">
+          <div className="w-12 h-12 bg-accent-blue rounded-2xl flex items-center justify-center text-white font-bold text-2xl shadow-lg">B</div>
+          <h1 className="text-3xl font-bold tracking-tight text-navy">Bantu Payroll</h1>
+        </div>
+
+        <div className="w-full max-w-[440px] bg-primary rounded-2xl border border-border shadow-sm p-10">
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+              <CheckCircle size={32} className="text-green-600" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">Setup Complete!</h2>
+            <p className="text-slate-500">Your license token to share with your team:</p>
+          </div>
+
+          <div className="bg-slate-100 rounded-xl p-4 mb-4">
+            <code className="text-sm break-all text-slate-700">{success.token}</code>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={copyToken}
+              className="flex-1 bg-accent-blue text-white py-3 rounded-xl font-bold hover:bg-accent-blue/90 transition-colors"
+            >
+              Copy Token
+            </button>
+            <button
+              onClick={() => navigate('/login')}
+              className="flex-1 bg-slate-200 text-slate-700 py-3 rounded-xl font-bold hover:bg-slate-300 transition-colors"
+            >
+              Go to Login
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 font-inter">
@@ -41,7 +94,7 @@ const Register: React.FC = () => {
       <div className="w-full max-w-[440px] bg-primary rounded-2xl border border-border shadow-sm p-10">
         <div className="mb-8">
           <h2 className="text-2xl font-bold mb-2">Create your account</h2>
-          <p className="text-slate-500 font-medium">Enter your license token from your platform admin</p>
+          <p className="text-slate-500 font-medium">First-time setup. Your team can use the generated license.</p>
         </div>
 
         {error && (
@@ -53,7 +106,6 @@ const Register: React.FC = () => {
             { field: 'name', label: 'Full Name', icon: <User size={18} />, type: 'text', placeholder: 'Jane Smith' },
             { field: 'email', label: 'Email Address', icon: <Mail size={18} />, type: 'email', placeholder: 'jane@company.com' },
             { field: 'password', label: 'Password', icon: <Lock size={18} />, type: 'password', placeholder: '••••••••' },
-            { field: 'licenseToken', label: 'License Token', icon: <Key size={18} />, type: 'text', placeholder: 'Enter your license token' },
           ].map(({ field, label, icon, type, placeholder }) => (
             <div key={field} className="flex flex-col gap-2">
               <label className="text-sm font-bold text-slate-400 uppercase tracking-wider">{label}</label>

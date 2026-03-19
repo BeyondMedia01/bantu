@@ -355,7 +355,17 @@ export const LoanAPI = {
 
 // ─── License Management ───────────────────────────────────────────────────────
 
+export interface LicenseStatus {
+  valid: boolean;
+  expiresAt: string;
+  active: boolean;
+  employeeCap: number;
+  employeeCount: number;
+  clientName: string;
+}
+
 export const LicenseAPI = {
+  getStatus: () => api.get<LicenseStatus>('/license/status'),
   getAll: () => api.get('/license'),
   issue: (clientId: string, expiryMonths?: number) =>
     api.post('/license/issue', { clientId, expiryMonths }),

@@ -26,7 +26,16 @@ const validateLicense = async (token) => {
   if (!license.active) return { valid: false, reason: 'License has been revoked' };
   if (license.expiresAt < new Date()) return { valid: false, reason: 'License has expired' };
 
-  return { valid: true, license };
+  const employeeCount = await prisma.employee.count({ where: { clientId: license.clientId } });
+  if (employeeCount >= license.employeeCap) {
+    return {
+      valid: true,
+      license,
+      warning: `Employee cap reached (${license.employeeCap}). Upgrade required.`
+    };
+  }
+
+  return { valid: true, license, employeeCount, employeeCap: license.employeeCap };
 };
 
 const revokeLicense = async (clientId) =>

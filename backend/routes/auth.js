@@ -8,14 +8,75 @@ const { sendPasswordReset } = require('../lib/mailer');
 
 const router = express.Router();
 
+const crypto = require('crypto');
+
 // POST /api/auth/register — CLIENT_ADMIN registration with license token
 router.post('/register', async (req, res) => {
-  const { name, email, password, licenseToken, clientName } = req.body;
+  const { name, email, password, licenseToken } = req.body;
 
-  if (!name || !email || !password || !licenseToken) {
-    return res.status(400).json({ message: 'name, email, password, and licenseToken are required' });
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: 'name, email, and password are required' });
   }
 
+  // If no users exist, first-time setup (no license required)
+  if (!licenseToken) {
+    const userCount = await prisma.user.count();
+    if (userCount > 0) {
+      return res.status(400).json({ message: 'License token is required' });
+    }
+
+    try {
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create default client (self-contained setup)
+      const client = await prisma.client.create({
+        data: { name: 'My Organization', isActive: true },
+      });
+
+      // Create self-contained license (valid for 1 year, 10 employees)
+      const expiresAt = new Date();
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      const token = crypto.randomBytes(32).toString('hex');
+
+      const license = await prisma.licenseToken.create({
+        data: {
+          clientId: client.id,
+          token,
+          expiresAt,
+          active: true,
+          employeeCap: 10,
+        },
+      });
+
+      // Create user
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role: 'CLIENT_ADMIN',
+          clientAdmin: { create: { clientId: client.id } },
+        },
+      });
+
+      const authToken = signToken({ userId: user.id, role: user.role, clientId: client.id });
+      return res.status(201).json({
+        token: authToken,
+        role: user.role,
+        clientId: client.id,
+        licenseToken: license.token,
+        message: 'Setup complete. Share this license token with your team: ' + license.token,
+      });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        return res.status(409).json({ message: 'Email already registered' });
+      }
+      console.error('Setup error:', error);
+      res.status(500).json({ message: 'Setup failed' });
+    }
+  }
+
+  // Validate provided license token
   const { valid, license, reason } = await validateLicense(licenseToken);
   if (!valid) return res.status(400).json({ message: `Invalid license: ${reason}` });
 
@@ -31,6 +92,17 @@ router.post('/register', async (req, res) => {
         clientAdmin: { create: { clientId: license.clientId } },
       },
     });
+
+    const token = signToken({ userId: user.id, role: user.role, clientId: license.clientId });
+    res.status(201).json({ token, role: user.role, clientId: license.clientId });
+  } catch (error) {
+    if (error.code === 'P2002') {
+      return res.status(409).json({ message: 'Email already registered' });
+    }
+    console.error('Registration error:', error);
+    res.status(500).json({ message: 'Registration failed' });
+  }
+});
 
     const token = signToken({ userId: user.id, role: user.role, clientId: license.clientId });
     res.status(201).json({ token, role: user.role, clientId: license.clientId });

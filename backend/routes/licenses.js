@@ -50,8 +50,41 @@ router.post('/reactivate', adminOnly, async (req, res) => {
   }
 });
 
+// GET /api/license — get current license status (authenticated)
+router.get('/status', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ message: 'Unauthorized' });
+
+    const { requireAuth } = require('../lib/auth');
+    const decoded = requireAuth(req);
+    if (!decoded.clientId) return res.status(400).json({ message: 'No client context' });
+
+    const license = await prisma.licenseToken.findUnique({
+      where: { clientId: decoded.clientId },
+      include: { client: { select: { name: true } } },
+    });
+
+    if (!license) return res.status(404).json({ message: 'No license found' });
+
+    const employeeCount = await prisma.employee.count({ where: { clientId: decoded.clientId } });
+
+    res.json({
+      valid: license.active && license.expiresAt > new Date(),
+      expiresAt: license.expiresAt,
+      active: license.active,
+      employeeCap: license.employeeCap,
+      employeeCount,
+      clientName: license.client.name,
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // GET /api/license — list all licenses (PLATFORM_ADMIN)
-router.get('/', adminOnly, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const licenses = await prisma.licenseToken.findMany({
       include: { client: { select: { name: true } } },

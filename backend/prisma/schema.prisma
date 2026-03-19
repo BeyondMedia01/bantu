@@ -500,15 +500,16 @@ model LoanRepayment {
 }
 
 model LicenseToken {
-  id          String   @id @default(uuid())
-  clientId    String   @unique
-  token       String   @unique
+  id          String    @id @default(uuid())
+  clientId    String    @unique
+  token       String    @unique
   expiresAt   DateTime
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  employeeCap Int      @default(10)
-  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  active      Boolean   @default(true)
+  redeemedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  employeeCap Int       @default(10)
+  client      Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
 }
 
 model Subscription {

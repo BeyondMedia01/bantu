@@ -32,6 +32,12 @@ router.post('/register', async (req, res) => {
       },
     });
 
+    // Mark license as redeemed (single-use)
+    await prisma.licenseToken.update({
+      where: { token: licenseToken },
+      data: { redeemedAt: new Date() },
+    });
+
     const token = signToken({ userId: user.id, role: user.role, clientId: license.clientId });
     res.status(201).json({
       token,

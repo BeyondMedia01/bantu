@@ -10,16 +10,73 @@ const router = express.Router();
 
 // POST /api/auth/register — CLIENT_ADMIN registration with license token
 router.post('/register', async (req, res) => {
-  const { name, email, password, licenseToken } = req.body;
+  const { name, email, password, licenseToken, clientName } = req.body;
 
-  if (!name || !email || !password || !licenseToken) {
-    return res.status(400).json({ message: 'name, email, password, and licenseToken are required' });
+  if (!name || !email || !password) {
+    return res.status(400).json({ message: 'name, email, and password are required' });
   }
 
-  const { valid, license, reason } = await validateLicense(licenseToken);
-  if (!valid) return res.status(400).json({ message: `Invalid license: ${reason}` });
-
   try {
+    // Check if any users exist in the system
+    const userCount = await prisma.user.count();
+
+    // If no users exist, allow self-registration without license (offline-first mode)
+    if (userCount === 0) {
+      if (!clientName) {
+        return res.status(400).json({ message: 'clientName is required for first-time setup' });
+      }
+
+      const hashedPassword = await bcrypt.hash(password, 12);
+
+      // Create client
+      const client = await prisma.client.create({
+        data: { name: clientName, isActive: true },
+      });
+
+      // Create self-contained license (10-year validity)
+      const expiresAt = new Date();
+      expiresAt.setFullYear(expiresAt.getFullYear() + 10);
+      const token = crypto.randomBytes(32).toString('hex');
+
+      const license = await prisma.licenseToken.create({
+        data: {
+          clientId: client.id,
+          token,
+          expiresAt,
+          active: true,
+          employeeCap: 10,
+        },
+      });
+
+      // Create user as CLIENT_ADMIN
+      const user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          role: 'CLIENT_ADMIN',
+          clientAdmin: { create: { clientId: client.id } },
+        },
+      });
+
+      const authToken = signToken({ userId: user.id, role: user.role, clientId: client.id });
+      return res.status(201).json({
+        token: authToken,
+        role: user.role,
+        clientId: client.id,
+        licenseToken: license.token,
+        message: 'Registration complete. Your offline license is valid for 10 years.',
+      });
+    }
+
+    // Existing system: license token required
+    if (!licenseToken) {
+      return res.status(400).json({ message: 'licenseToken is required. Please contact your administrator.' });
+    }
+
+    const { valid, license, reason } = await validateLicense(licenseToken);
+    if (!valid) return res.status(400).json({ message: `Invalid license: ${reason}` });
+
     const hashedPassword = await bcrypt.hash(password, 12);
 
     const user = await prisma.user.create({

@@ -8,4 +8,4 @@ backend/prisma/*.db
 .DS_Store
 .env
 .env.local
-*.env
+*.envbackend/.env
